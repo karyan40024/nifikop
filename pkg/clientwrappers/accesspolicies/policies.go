@@ -1,6 +1,7 @@
 package accesspolicies
 
 import (
+	"strings"
 	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
 	"github.com/konpyutaika/nifikop/api/v1alpha1"
 	"github.com/konpyutaika/nifikop/pkg/clientwrappers"
@@ -25,6 +26,18 @@ func ExistAccessPolicies(accessPolicy *v1alpha1.AccessPolicy, config *clientconf
 			return false, nil
 		}
 		return false, err
+	}
+
+	//special case: if the entity is not the same but e.g. the parent
+	//entity.Component.Resource = "/data/process-groups/d474577c-0178-1000-ffff-ffffeef1d529"
+	//accessPolicy.Resource = "/data"
+	//accessPolicy.ComponentType = "process-groups"
+	var gottenComponentId = strings.Replace(entity.Component.Resource, "/"+accessPolicy.ComponentType+"/", "", -1)
+	if string(accessPolicy.Resource) != "/" {
+		gottenComponentId = strings.Replace(gottenComponentId, string(accessPolicy.Resource), "", -1)
+	}
+	if accessPolicy.ComponentId != "" && gottenComponentId != accessPolicy.ComponentId {
+		return false, nil
 	}
 
 	return entity != nil, nil
