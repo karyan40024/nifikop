@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
 	"github.com/jarcoal/httpmock"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,7 +28,7 @@ func TestGetRegistryClient(t *testing.T) {
 	assert.Nil(entity)
 }
 
-func testGetRegistryClient(t *testing.T, id string, status int) (*nigoapi.RegistryClientEntity, error) {
+func testGetRegistryClient(t *testing.T, id string, status int) (*nigoapi.FlowRegistryClientEntity, error) {
 
 	cluster := testClusterMock(t)
 
@@ -69,7 +69,7 @@ func TestCreateRegistryClient(t *testing.T) {
 	assert.Nil(entity)
 }
 
-func testCreateRegistryClient(t *testing.T, entity *nigoapi.RegistryClientEntity, status int) (*nigoapi.RegistryClientEntity, error) {
+func testCreateRegistryClient(t *testing.T, entity *nigoapi.FlowRegistryClientEntity, status int) (*nigoapi.FlowRegistryClientEntity, error) {
 
 	cluster := testClusterMock(t)
 
@@ -81,7 +81,7 @@ func testCreateRegistryClient(t *testing.T, entity *nigoapi.RegistryClientEntity
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	url := nifiAddress(cluster, fmt.Sprintf("/controller/registry-clients"))
+	url := nifiAddress(cluster, "/controller/registry-clients")
 	httpmock.RegisterResponder(http.MethodPost, url,
 		func(req *http.Request) (*http.Response, error) {
 			return httpmock.NewJsonResponse(
@@ -110,7 +110,7 @@ func TestUpdateRegistryClient(t *testing.T) {
 	assert.Nil(entity)
 }
 
-func testUpdateRegistryClient(t *testing.T, entity *nigoapi.RegistryClientEntity, status int) (*nigoapi.RegistryClientEntity, error) {
+func testUpdateRegistryClient(t *testing.T, entity *nigoapi.FlowRegistryClientEntity, status int) (*nigoapi.FlowRegistryClientEntity, error) {
 
 	cluster := testClusterMock(t)
 
@@ -148,7 +148,7 @@ func TestRemoveRegistryClient(t *testing.T) {
 	assert.IsType(ErrNifiClusterNotReturned200, err)
 }
 
-func testRemoveRegistryClient(t *testing.T, entity *nigoapi.RegistryClientEntity, status int) error {
+func testRemoveRegistryClient(t *testing.T, entity *nigoapi.FlowRegistryClientEntity, status int) error {
 
 	cluster := testClusterMock(t)
 
@@ -171,11 +171,11 @@ func testRemoveRegistryClient(t *testing.T, entity *nigoapi.RegistryClientEntity
 	return client.RemoveRegistryClient(*entity)
 }
 
-func MockRegistryClient(id, name, description, uri string) nigoapi.RegistryClientEntity {
+func MockRegistryClient(id, name, description, uri string) nigoapi.FlowRegistryClientEntity {
 	var version int64 = 10
-	return nigoapi.RegistryClientEntity{
+	return nigoapi.FlowRegistryClientEntity{
 		Id: id,
-		Component: &nigoapi.RegistryDto{
+		Component: &nigoapi.FlowRegistryClientDto{
 			Id:          id,
 			Name:        name,
 			Description: description,

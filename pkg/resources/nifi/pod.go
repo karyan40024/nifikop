@@ -5,16 +5,15 @@ import (
 	"sort"
 	"strings"
 
-	configcommon "github.com/konpyutaika/nifikop/pkg/nificlient/config/common"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
+
+	"go.uber.org/zap"
 	runtimeClient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/go-logr/logr"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
 	"github.com/konpyutaika/nifikop/pkg/resources/templates"
 	"github.com/konpyutaika/nifikop/pkg/util"
 	nifiutil "github.com/konpyutaika/nifikop/pkg/util/nifi"
 	pkicommon "github.com/konpyutaika/nifikop/pkg/util/pki"
-	zk "github.com/konpyutaika/nifikop/pkg/util/zookeeper"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,12 +39,8 @@ const (
 	ContainerName string = "nifi"
 )
 
-func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev1.PersistentVolumeClaim, log logr.Logger) runtimeClient.Object {
-
+func (r *Reconciler) pod(node v1.Node, nodeConfig *v1.NodeConfig, pvcs []corev1.PersistentVolumeClaim, log zap.Logger) runtimeClient.Object {
 	zkAddress := r.NifiCluster.Spec.ZKAddress
-	zkHostname := zk.GetHostnameAddress(zkAddress)
-	zkPort := zk.GetPortAddress(zkAddress)
-
 	dataVolume, dataVolumeMount := generateDataVolumeAndVolumeMount(pvcs)
 
 	volume := []corev1.Volume{}
@@ -64,7 +59,7 @@ func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev
 	}
 
 	if r.NifiCluster.Spec.ListenersConfig.SSLSecrets != nil {
-		volume = append(volume, generateVolumesForSSL(r.NifiCluster, id)...)
+		volume = append(volume, generateVolumesForSSL(r.NifiCluster, node.Id)...)
 		volumeMount = append(volumeMount, generateVolumeMountForSSL()...)
 	}
 
@@ -75,7 +70,7 @@ func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev
 				//ConfigMap: &corev1.ConfigMapVolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					//LocalObjectReference: corev1.LocalObjectReference{Name: fmt.Sprintf(templates.NodeConfigTemplate+"-%d", r.NifiCluster.Name, id)},
-					SecretName:  fmt.Sprintf(templates.NodeConfigTemplate+"-%d", r.NifiCluster.Name, id),
+					SecretName:  fmt.Sprintf(templates.NodeConfigTemplate+"-%d", r.NifiCluster.Name, node.Id),
 					DefaultMode: util.Int32Pointer(0644),
 				},
 			},
@@ -120,8 +115,12 @@ func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev
 		r.NifiCluster.Spec.Pod.Labels,
 		nodeConfig.GetPodLabels(),
 		nifiutil.LabelsForNifi(r.NifiCluster.Name),
-		{"nodeId": fmt.Sprintf("%d", id)},
+		node.Labels,
+		{"nodeId": fmt.Sprintf("%d", node.Id)},
 	}
+
+	// merge host aliases together, preferring the aliases in the nodeConfig
+	allHostAliases := util.MergeHostAliases(r.NifiCluster.Spec.Pod.HostAliases, nodeConfig.HostAliases)
 
 	if r.NifiCluster.Spec.GetMetricPort() != nil {
 		anntotationsToMerge = append(anntotationsToMerge, util.MonitoringAnnotations(*r.NifiCluster.Spec.GetMetricPort()))
@@ -133,7 +132,7 @@ func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev
 	pod := &corev1.Pod{
 		//ObjectMeta: templates.ObjectMetaWithAnnotations(
 		ObjectMeta: templates.ObjectMetaWithGeneratedNameAndAnnotations(
-			nifiutil.ComputeNodeName(id, r.NifiCluster.Name),
+			nifiutil.ComputeNodeName(node.Id, r.NifiCluster.Name),
 			util.MergeLabels(labelsToMerge...),
 			util.MergeAnnotations(anntotationsToMerge...), r.NifiCluster,
 		),
@@ -148,13 +147,36 @@ func (r *Reconciler) pod(id int32, nodeConfig *v1alpha1.NodeConfig, pvcs []corev
 					Name:            "zookeeper",
 					Image:           r.NifiCluster.Spec.GetInitContainerImage(),
 					ImagePullPolicy: nodeConfig.GetImagePullPolicy(),
-					Command: []string{"sh", "-c", fmt.Sprintf(`
-echo trying to contact Zookeeper: %s
-until nc -vzw 1 %s %s; do
-	echo "waiting for zookeeper..."
-	sleep 2
-done`,
-						zkAddress, zkHostname, zkPort)},
+					Env: []corev1.EnvVar{
+						{
+							Name:  "ZK_ADDRESS",
+							Value: zkAddress,
+						},
+					},
+					// The zookeeper init check here just ensures that at least one configured zookeeper host is alive
+					Command: []string{"bash", "-c", `
+set -e
+echo "Trying to contact Zookeeper using connection string: ${ZK_ADDRESS}"
+
+connected=0
+IFS=',' read -r -a zk_hosts <<< "${ZK_ADDRESS}"
+until [ $connected -eq 1 ]
+do
+	for zk_host in "${zk_hosts[@]}"
+	do
+		IFS=':' read -r -a zk_host_port <<< "${zk_host}"
+		
+		echo "Checking Zookeeper Host: [${zk_host_port[0]}] Port: [${zk_host_port[1]}]"
+		nc -vzw 1 ${zk_host_port[0]} ${zk_host_port[1]}
+		if [ $? -eq 0 ]; then
+			echo "Connected to ${zk_host_port}"
+			connected=1
+		fi
+	done
+
+	sleep 1
+done
+`},
 					Resources: generateInitContainerResources(),
 				},
 			}...)),
@@ -162,22 +184,22 @@ done`,
 				PodAntiAffinity: generatePodAntiAffinity(r.NifiCluster.Name, r.NifiCluster.Spec.OneNifiNodePerNode),
 			},
 			TopologySpreadConstraints:     r.NifiCluster.Spec.TopologySpreadConstraints,
-			Containers:                    r.injectAdditionalEnvVars(r.generateContainers(nodeConfig, id, podVolumeMounts, zkAddress)),
+			Containers:                    r.injectAdditionalEnvVars(r.generateContainers(nodeConfig, node.Id, podVolumeMounts, zkAddress)),
+			HostAliases:                   allHostAliases,
 			Volumes:                       podVolumes,
 			RestartPolicy:                 corev1.RestartPolicyNever,
 			TerminationGracePeriodSeconds: util.Int64Pointer(120),
 			DNSPolicy:                     corev1.DNSClusterFirst,
 			ImagePullSecrets:              nodeConfig.GetImagePullSecrets(),
 			ServiceAccountName:            nodeConfig.GetServiceAccount(),
-			Priority:                      util.Int32Pointer(0),
-			SchedulerName:                 "default-scheduler",
+			PriorityClassName:             nodeConfig.GetPriorityClass(),
 			Tolerations:                   nodeConfig.GetTolerations(),
 			NodeSelector:                  nodeConfig.GetNodeSelector(),
 		},
 	}
 
 	//if r.NifiCluster.Spec.Service.HeadlessEnabled {
-	pod.Spec.Hostname = nifiutil.ComputeNodeName(id, r.NifiCluster.Name)
+	pod.Spec.Hostname = nifiutil.ComputeNodeName(node.Id, r.NifiCluster.Name)
 	pod.Spec.Subdomain = nifiutil.ComputeRequestNiFiAllNodeService(r.NifiCluster.Name,
 		r.NifiCluster.Spec.Service.GetServiceTemplate())
 	//}
@@ -188,7 +210,6 @@ done`,
 	return pod
 }
 
-//
 func generateDataVolumeAndVolumeMount(pvcs []corev1.PersistentVolumeClaim) (volume []corev1.Volume, volumeMount []corev1.VolumeMount) {
 
 	for _, pvc := range pvcs {
@@ -212,7 +233,6 @@ func generateDataVolumeAndVolumeMount(pvcs []corev1.PersistentVolumeClaim) (volu
 	return
 }
 
-//
 func generatePodAntiAffinity(clusterName string, hardRuleEnabled bool) *corev1.PodAntiAffinity {
 	podAntiAffinity := corev1.PodAntiAffinity{}
 	if hardRuleEnabled {
@@ -244,7 +264,6 @@ func generatePodAntiAffinity(clusterName string, hardRuleEnabled bool) *corev1.P
 	return &podAntiAffinity
 }
 
-//
 func (r *Reconciler) generateContainerPortForInternalListeners() []corev1.ContainerPort {
 	var usedPorts []corev1.ContainerPort
 
@@ -259,7 +278,6 @@ func (r *Reconciler) generateContainerPortForInternalListeners() []corev1.Contai
 	return usedPorts
 }
 
-//
 func (r *Reconciler) generateContainerPortForExternalListeners() []corev1.ContainerPort {
 	var usedPorts []corev1.ContainerPort
 
@@ -274,7 +292,6 @@ func (r *Reconciler) generateContainerPortForExternalListeners() []corev1.Contai
 	return usedPorts
 }
 
-//
 func (r *Reconciler) generateDefaultContainerPort() []corev1.ContainerPort {
 
 	usedPorts := []corev1.ContainerPort{
@@ -282,7 +299,7 @@ func (r *Reconciler) generateDefaultContainerPort() []corev1.ContainerPort {
 		/*{
 			Name:          "metrics",
 			Protocol:      corev1.ProtocolTCP,
-			ContainerPort: v1alpha1.MetricsPort,
+			ContainerPort: v1.MetricsPort,
 		},*/
 	}
 
@@ -290,13 +307,13 @@ func (r *Reconciler) generateDefaultContainerPort() []corev1.ContainerPort {
 }
 
 // TODO : manage default port
-func GetServerPort(l *v1alpha1.ListenersConfig) int32 {
+func GetServerPort(l *v1.ListenersConfig) int32 {
 	var httpsServerPort int32
 	var httpServerPort int32
 	for _, iListener := range l.InternalListeners {
-		if iListener.Type == v1alpha1.HttpsListenerType {
+		if iListener.Type == v1.HttpsListenerType {
 			httpsServerPort = iListener.ContainerPort
-		} else if iListener.Type == v1alpha1.HttpListenerType {
+		} else if iListener.Type == v1.HttpListenerType {
 			httpServerPort = iListener.ContainerPort
 		}
 	}
@@ -306,7 +323,7 @@ func GetServerPort(l *v1alpha1.ListenersConfig) int32 {
 	return httpServerPort
 }
 
-func generateVolumesForSSL(cluster *v1alpha1.NifiCluster, nodeId int32) []corev1.Volume {
+func generateVolumesForSSL(cluster *v1.NifiCluster, nodeId int32) []corev1.Volume {
 	return []corev1.Volume{
 		{
 			Name: serverKeystoreVolume,
@@ -358,7 +375,7 @@ func generateInitContainerResources() corev1.ResourceRequirements {
 	}
 }
 
-func (r *Reconciler) generateContainers(nodeConfig *v1alpha1.NodeConfig, id int32, podVolumeMounts []corev1.VolumeMount, zkAddress string) []corev1.Container {
+func (r *Reconciler) generateContainers(nodeConfig *v1.NodeConfig, id int32, podVolumeMounts []corev1.VolumeMount, zkAddress string) []corev1.Container {
 	var containers []corev1.Container
 	containers = append(containers, r.createNifiNodeContainer(nodeConfig, id, podVolumeMounts, zkAddress))
 	containers = append(containers, r.NifiCluster.Spec.SidecarConfigs...)
@@ -369,7 +386,7 @@ func (r *Reconciler) generateContainers(nodeConfig *v1alpha1.NodeConfig, id int3
 	return containers
 }
 
-func (r *Reconciler) createNifiNodeContainer(nodeConfig *v1alpha1.NodeConfig, id int32, podVolumeMounts []corev1.VolumeMount, zkAddress string) corev1.Container {
+func (r *Reconciler) createNifiNodeContainer(nodeConfig *v1.NodeConfig, id int32, podVolumeMounts []corev1.VolumeMount, zkAddress string) corev1.Container {
 	// ContainersPorts initialization
 	nifiNodeContainersPorts := r.generateContainerPortForInternalListeners()
 
@@ -382,48 +399,53 @@ func (r *Reconciler) createNifiNodeContainer(nodeConfig *v1alpha1.NodeConfig, id
 	if r.NifiCluster.Spec.ListenersConfig.SSLSecrets != nil {
 		readinessCommand = fmt.Sprintf(`curl -kv --cert  %s/%s --key %s/%s https://$(hostname -f):%d/nifi`,
 			serverKeystorePath,
-			v1alpha1.TLSCert,
+			v1.TLSCert,
 			serverKeystorePath,
-			v1alpha1.TLSKey,
+			v1.TLSKey,
 			GetServerPort(r.NifiCluster.Spec.ListenersConfig))
 	}
-
-	failCondition := ""
-
-	if val, ok := r.NifiCluster.Status.NodesState[fmt.Sprint(id)]; !ok || (val.InitClusterNode != v1alpha1.IsInitClusterNode &&
-		(val.GracefulActionState.State == v1alpha1.GracefulUpscaleRequired ||
-			val.GracefulActionState.State == v1alpha1.GracefulUpscaleRunning)) {
-		failCondition = `else
-	echo fail to request cluster
-	exit 1
-`
+	// TODO : Manage https setup use cases https://github.com/cetic/helm-nifi/blob/master/templates/statefulset.yaml#L165
+	readinessProbe := &corev1.Probe{
+		InitialDelaySeconds: readinessInitialDelaySeconds,
+		TimeoutSeconds:      readinessHealthCheckTimeout,
+		PeriodSeconds:       readinessHealthCheckPeriod,
+		FailureThreshold:    readinessHealthCheckThreshold,
+		ProbeHandler: corev1.ProbeHandler{
+			/*HTTPGet: &corev1.HTTPGetAction{
+				Path: "/nifi-api",
+				Port: intstr.FromInt(int(GetServerPort(&r.NifiCluster.Spec.ListenersConfig))),
+				Scheme: corev1.URISchemeHTTPS,
+				//Host: nodeHostname,
+			},*/
+			Exec: &corev1.ExecAction{
+				Command: []string{
+					"bash",
+					"-c",
+					readinessCommand,
+				},
+			},
+		},
+	}
+	// if the readiness probe has been overridden, then use that
+	if r.NifiCluster.Spec.Pod.ReadinessProbe != nil {
+		readinessProbe = r.NifiCluster.Spec.Pod.ReadinessProbe
 	}
 
-	requestClusterStatus := fmt.Sprintf("curl --fail -v http://%s/nifi-api/controller/cluster > $NIFI_BASE_DIR/cluster.state",
-		nifiutil.GenerateRequestNiFiAllNodeAddressFromCluster(r.NifiCluster))
-
-	if configcommon.UseSSL(r.NifiCluster) {
-		requestClusterStatus = fmt.Sprintf(
-			"curl --fail -kv --cert /var/run/secrets/java.io/keystores/client/tls.crt --key /var/run/secrets/java.io/keystores/client/tls.key https://%s/nifi-api/controller/cluster > $NIFI_BASE_DIR/cluster.state",
-			nifiutil.GenerateRequestNiFiAllNodeAddressFromCluster(r.NifiCluster))
+	livenessProbe := &corev1.Probe{
+		InitialDelaySeconds: livenessInitialDelaySeconds,
+		TimeoutSeconds:      livenessHealthCheckTimeout,
+		PeriodSeconds:       livenessHealthCheckPeriod,
+		FailureThreshold:    livenessHealthCheckThreshold,
+		ProbeHandler: corev1.ProbeHandler{
+			TCPSocket: &corev1.TCPSocketAction{
+				Port: *util.IntstrPointer(int(GetServerPort(r.NifiCluster.Spec.ListenersConfig))),
+			},
+		},
 	}
-
-	removesFileAction := fmt.Sprintf(`if %s; then
-	echo "Successfully query NiFi cluster"
-	%s
-	echo "state $STATUS"
-	if [[ -z "$STATUS" ]]; then 
-		echo "Removing previous exec setup"
-		if [ -f "$NIFI_BASE_DIR/data/users.xml" ]; then rm -f $NIFI_BASE_DIR/data/users.xml; fi
-		if [ -f "$NIFI_BASE_DIR/data/authorizations.xml" ]; then rm -f  $NIFI_BASE_DIR/data/authorizations.xml; fi
-		if [ -f " $NIFI_BASE_DIR/data/flow.xml.gz" ]; then rm -f  $NIFI_BASE_DIR/data/flow.xml.gz; fi
-	fi
-%s
-fi
-rm -f $NIFI_BASE_DIR/cluster.state `,
-		requestClusterStatus,
-		"STATUS=$(jq -r \".cluster.nodes[] | select(.address==\\\"$(hostname -f)\\\") | .status\" $NIFI_BASE_DIR/cluster.state)",
-		failCondition)
+	// if the liveness probe has been overridden, then use that
+	if r.NifiCluster.Spec.Pod.LivenessProbe != nil {
+		livenessProbe = r.NifiCluster.Spec.Pod.LivenessProbe
+	}
 
 	nodeAddress := nifiutil.ComputeHostListenerNodeAddress(
 		id, r.NifiCluster.Name, r.NifiCluster.Namespace, r.NifiCluster.Spec.ListenersConfig.GetClusterDomain(),
@@ -452,8 +474,7 @@ echo "Hostname is successfully binded withy IP adress"`, nodeAddress, nodeAddres
 	}
 	command := []string{"bash", "-ce", fmt.Sprintf(`cp ${NIFI_HOME}/tmp/* ${NIFI_HOME}/conf/
 %s
-%s
-exec bin/nifi.sh run`, resolveIp, removesFileAction)}
+exec bin/nifi.sh run`, resolveIp)}
 
 	return corev1.Container{
 		Name:            ContainerName,
@@ -466,39 +487,8 @@ exec bin/nifi.sh run`, resolveIp, removesFileAction)}
 				},
 			},
 		},
-		// TODO : Manage https setup use cases https://github.com/cetic/helm-nifi/blob/master/templates/statefulset.yaml#L165
-		ReadinessProbe: &corev1.Probe{
-			InitialDelaySeconds: readinessInitialDelaySeconds,
-			TimeoutSeconds:      readinessHealthCheckTimeout,
-			PeriodSeconds:       readinessHealthCheckPeriod,
-			FailureThreshold:    readinessHealthCheckThreshold,
-			ProbeHandler: corev1.ProbeHandler{
-				/*HTTPGet: &corev1.HTTPGetAction{
-					Path: "/nifi-api",
-					Port: intstr.FromInt(int(GetServerPort(&r.NifiCluster.Spec.ListenersConfig))),
-					Scheme: corev1.URISchemeHTTPS,
-					//Host: nodeHostname,
-				},*/
-				Exec: &corev1.ExecAction{
-					Command: []string{
-						"bash",
-						"-c",
-						readinessCommand,
-					},
-				},
-			},
-		},
-		LivenessProbe: &corev1.Probe{
-			InitialDelaySeconds: livenessInitialDelaySeconds,
-			TimeoutSeconds:      livenessHealthCheckTimeout,
-			PeriodSeconds:       livenessHealthCheckPeriod,
-			FailureThreshold:    livenessHealthCheckThreshold,
-			ProbeHandler: corev1.ProbeHandler{
-				TCPSocket: &corev1.TCPSocketAction{
-					Port: *util.IntstrPointer(int(GetServerPort(r.NifiCluster.Spec.ListenersConfig))),
-				},
-			},
-		},
+		ReadinessProbe: readinessProbe,
+		LivenessProbe:  livenessProbe,
 		Env: []corev1.EnvVar{
 			{
 				Name:  "NIFI_ZOOKEEPER_CONNECT_STRING",

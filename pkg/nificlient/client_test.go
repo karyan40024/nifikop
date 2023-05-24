@@ -2,15 +2,17 @@ package nificlient
 
 import (
 	"fmt"
-	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
 	"net/http"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"testing"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
+
+	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
+	"go.uber.org/zap"
+
 	"github.com/jarcoal/httpmock"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
 	"github.com/konpyutaika/nifikop/pkg/errorfactory"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,10 +24,6 @@ const (
 	clusterNamespace = "test-namespace"
 )
 
-type mockClient struct {
-	client.Client
-}
-
 var (
 	nodeURITemplate = fmt.Sprintf("%s-%s-node.%s.svc.cluster.local:%s",
 		clusterName, "%d", clusterNamespace, "%d")
@@ -34,7 +32,7 @@ var (
 
 func TestNew(t *testing.T) {
 	opts := newMockOpts()
-	if client := New(opts); client == nil {
+	if client := New(opts, zap.NewNop()); client == nil {
 		t.Error("Expected new client, got nil")
 	}
 }
@@ -65,7 +63,7 @@ func TestBuild(t *testing.T) {
 									NodeId:  "1234556",
 									Address: fmt.Sprintf(nodeURITemplate, 1, httpContainerPort),
 									ApiPort: httpContainerPort,
-									Status:  string(v1alpha1.ConnectStatus),
+									Status:  string(v1.ConnectStatus),
 								},
 							},
 						},

@@ -1,18 +1,19 @@
 package reportingtask
 
 import (
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	"github.com/konpyutaika/nifikop/api/v1"
+	"strconv"
+
 	"github.com/konpyutaika/nifikop/pkg/clientwrappers"
 	"github.com/konpyutaika/nifikop/pkg/common"
 	"github.com/konpyutaika/nifikop/pkg/errorfactory"
 	"github.com/konpyutaika/nifikop/pkg/nificlient"
 	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"strconv"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
+	"go.uber.org/zap"
 )
 
-var log = ctrl.Log.WithName("reportingtaks-method")
+var log = common.CustomLogger().Named("reportingtask-method")
 
 const (
 	reportingTaskName                = "managed-prometheus"
@@ -24,7 +25,7 @@ const (
 	reportingTaskSendJVM             = "true"
 )
 
-func ExistReportingTaks(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCluster) (bool, error) {
+func ExistReportingTaks(config *clientconfig.NifiConfig, cluster *v1.NifiCluster) (bool, error) {
 
 	if cluster.Status.PrometheusReportingTask.Id == "" {
 		return false, nil
@@ -46,7 +47,7 @@ func ExistReportingTaks(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiC
 	return entity != nil, nil
 }
 
-func CreateReportingTask(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCluster) (*v1alpha1.PrometheusReportingTaskStatus, error) {
+func CreateReportingTask(config *clientconfig.NifiConfig, cluster *v1.NifiCluster) (*v1.PrometheusReportingTaskStatus, error) {
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
 		return nil, err
@@ -60,13 +61,13 @@ func CreateReportingTask(config *clientconfig.NifiConfig, cluster *v1alpha1.Nifi
 		return nil, err
 	}
 
-	return &v1alpha1.PrometheusReportingTaskStatus{
+	return &v1.PrometheusReportingTaskStatus{
 		Id:      entity.Id,
 		Version: *entity.Revision.Version,
 	}, nil
 }
 
-func SyncReportingTask(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCluster) (*v1alpha1.PrometheusReportingTaskStatus, error) {
+func SyncReportingTask(config *clientconfig.NifiConfig, cluster *v1.NifiCluster) (*v1.PrometheusReportingTaskStatus, error) {
 
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -108,6 +109,8 @@ func SyncReportingTask(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCl
 	}
 
 	if entity.Status.RunStatus == "STOPPED" || entity.Status.RunStatus == "DISABLED" {
+		log.Info("Starting Prometheus reporting task",
+			zap.String("clusterName", cluster.Name))
 		entity, err = nClient.UpdateRunStatusReportingTask(entity.Id, nigoapi.ReportingTaskRunStatusEntity{
 			Revision: entity.Revision,
 			State:    "RUNNING",
@@ -124,7 +127,7 @@ func SyncReportingTask(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCl
 	return &status, nil
 }
 
-func RemoveReportingTaks(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCluster) error {
+func RemoveReportingTaks(config *clientconfig.NifiConfig, cluster *v1.NifiCluster) error {
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
 		return err
@@ -144,14 +147,14 @@ func RemoveReportingTaks(config *clientconfig.NifiConfig, cluster *v1alpha1.Nifi
 	return clientwrappers.ErrorRemoveOperation(log, err, "Remove registry-client")
 }
 
-func reportingTaksIsSync(cluster *v1alpha1.NifiCluster, entity *nigoapi.ReportingTaskEntity) bool {
+func reportingTaksIsSync(cluster *v1.NifiCluster, entity *nigoapi.ReportingTaskEntity) bool {
 	return reportingTaskName == entity.Component.Name &&
 		strconv.Itoa(*cluster.Spec.GetMetricPort()) == entity.Component.Properties[reportingTaskEnpointPortProperty] &&
 		reportingTaskStrategy == entity.Component.Properties[reportingTaskStrategyProperty] &&
 		reportingTaskSendJVM == entity.Component.Properties[reportingTaskSendJVMProperty]
 }
 
-func updateReportingTaskEntity(cluster *v1alpha1.NifiCluster, entity *nigoapi.ReportingTaskEntity) {
+func updateReportingTaskEntity(cluster *v1.NifiCluster, entity *nigoapi.ReportingTaskEntity) {
 
 	var defaultVersion int64 = 0
 

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
 	"github.com/jarcoal/httpmock"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -40,7 +40,7 @@ func testCreateSnippet(t *testing.T, entity nigoapi.SnippetEntity, status int) (
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	url := nifiAddress(cluster, fmt.Sprintf("/snippets"))
+	url := nifiAddress(cluster, "/snippets")
 	httpmock.RegisterResponder(http.MethodPost, url,
 		func(req *http.Request) (*http.Response, error) {
 			return httpmock.NewJsonResponse(

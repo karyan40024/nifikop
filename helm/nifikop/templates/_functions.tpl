@@ -28,6 +28,37 @@ If release name contains chart name it will be used as a full name.
 Return the appropriate apiVersion value to use for the capi-operator managed k8s resources
 */}}
 {{- define "nifikop.apiVersion" -}}
-{{- printf "%s" "nificlusters.nifi.konpyutaika.com/v1alpha1" -}}
+{{- printf "%s" "nificlusters.nifi.konpyutaika.com/v1" -}}
 {{- end -}}
 
+{{- define "userdefined.labels" }}
+{{ if .Values.labels }}
+{{- with .Values.labels }}
+{{- toYaml . | nindent 4 }}
+{{- end}}
+{{- end}}
+{{- end }}
+
+{{- define "userdefined.annotations" }}
+{{ if .Values.annotations }}
+{{- with .Values.annotations }}
+{{- toYaml . | nindent 4 }}
+{{- end}}
+{{- end}}
+{{- end }}
+
+
+{{- define "webhook.service.name" -}}
+{{- $name := default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-webhook" $name -}}
+{{- end -}}
+
+{{- define "webhook.secret.name" -}}
+{{- $name := default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-webhook-server-cert" $name -}}
+{{- end -}}
+
+{{- define "webhook.certificate.name" -}}
+{{- $name := default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- printf "%s-webhook-cert" $name -}}
+{{- end -}}

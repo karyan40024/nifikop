@@ -4,13 +4,13 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	nifikopv1 "github.com/konpyutaika/nifikop/api/v1"
+
 	"github.com/konpyutaika/nifikop/pkg/errorfactory"
-	v1 "k8s.io/api/core/v1"
+	"go.uber.org/zap"
 
 	"emperror.dev/errors"
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
-	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +19,7 @@ import (
 )
 
 // Reconcile reconciles K8S resources
-func Reconcile(log logr.Logger, client runtimeClient.Client, desired runtimeClient.Object, cr *v1alpha1.NifiCluster) error {
+func Reconcile(log zap.Logger, client runtimeClient.Client, desired runtimeClient.Object, cr *nifikopv1.NifiCluster) error {
 	desiredType := reflect.TypeOf(desired)
 	current := desired.DeepCopyObject().(runtimeClient.Object)
 
@@ -28,7 +28,7 @@ func Reconcile(log logr.Logger, client runtimeClient.Client, desired runtimeClie
 	default:
 		var key runtimeClient.ObjectKey
 		key = runtimeClient.ObjectKeyFromObject(current)
-		log = log.WithValues("kind", desiredType, "name", key.Name)
+		log.Debug("reconciling", zap.String("kind", desiredType.String()), zap.String("name", key.Name))
 
 		err = client.Get(context.TODO(), key, current)
 		if err != nil && !apierrors.IsNotFound(err) {
@@ -51,19 +51,22 @@ func Reconcile(log logr.Logger, client runtimeClient.Client, desired runtimeClie
 					"kind", desiredType, "name", key.Name,
 				)
 			}
-			log.Info("resource created")
+			log.Info("resource created",
+				zap.String("name", desired.GetName()),
+				zap.String("namespace", desired.GetNamespace()),
+				zap.String("kind", desired.GetObjectKind().GroupVersionKind().Kind))
 			return nil
 		}
 	}
 	if err == nil {
 		switch desired.(type) {
-		case *v1alpha1.NifiUser:
-			user := desired.(*v1alpha1.NifiUser)
-			user.Status = current.(*v1alpha1.NifiUser).Status
+		case *nifikopv1.NifiUser:
+			user := desired.(*nifikopv1.NifiUser)
+			user.Status = current.(*nifikopv1.NifiUser).Status
 			desired = user
-		case *v1alpha1.NifiUserGroup:
-			group := desired.(*v1alpha1.NifiUserGroup)
-			group.Status = current.(*v1alpha1.NifiUserGroup).Status
+		case *nifikopv1.NifiUserGroup:
+			group := desired.(*nifikopv1.NifiUserGroup)
+			group.Status = current.(*nifikopv1.NifiUserGroup).Status
 			desired = group
 		}
 
@@ -83,51 +86,57 @@ func Reconcile(log logr.Logger, client runtimeClient.Client, desired runtimeClie
 				desired = svc
 			}
 
-			if err := client.Update(context.TODO(), desired); err != nil {
-				return errorfactory.New(errorfactory.APIFailure{}, err, "updating resource failed", "kind", desiredType)
-			}
 			if cr != nil {
-				switch desired.(type) {
+				//switch desired.(type) {
+				switch desired := desired.(type) {
 				case *corev1.ConfigMap:
 					// Only update status when configmap belongs to node
-					if id, ok := desired.(*corev1.ConfigMap).Labels["nodeId"]; ok {
-						statusErr := UpdateNodeStatus(client, []string{id}, cr, v1alpha1.ConfigOutOfSync, log)
+					if id, ok := desired.Labels["nodeId"]; ok {
+						statusErr := UpdateNodeStatus(client, []string{id}, cr, nifikopv1.ConfigOutOfSync, log)
 						if statusErr != nil {
 							return errors.WrapIfWithDetails(err, "updating status for resource failed", "kind", desiredType)
 						}
 					}
 				case *corev1.Secret:
 					// Only update status when secret belongs to node
-					if id, ok := desired.(*corev1.Secret).Labels["nodeId"]; ok {
-						statusErr := UpdateNodeStatus(client, []string{id}, cr, v1alpha1.ConfigOutOfSync, log)
+					if id, ok := desired.Labels["nodeId"]; ok {
+						statusErr := UpdateNodeStatus(client, []string{id}, cr, nifikopv1.ConfigOutOfSync, log)
 						if statusErr != nil {
 							return errors.WrapIfWithDetails(err, "updating status for resource failed", "kind", desiredType)
 						}
 					}
 				}
 			}
+
+			if err := client.Update(context.TODO(), desired); err != nil {
+				return errorfactory.New(errorfactory.APIFailure{}, err, "updating resource failed", "kind", desiredType)
+			}
 		}
 
-		log.Info("resource updated")
+		log.Debug("resource updated",
+			zap.String("name", desired.GetName()),
+			zap.String("namespace", desired.GetNamespace()),
+			zap.String("kind", desired.GetObjectKind().GroupVersionKind().Kind))
+
 	}
 	return nil
 }
 
 // CheckIfObjectUpdated checks if the given object is updated using K8sObjectMatcher
-func CheckIfObjectUpdated(log logr.Logger, desiredType reflect.Type, current, desired runtime.Object) bool {
+func CheckIfObjectUpdated(log zap.Logger, desiredType reflect.Type, current, desired runtime.Object) bool {
 	patchResult, err := patch.DefaultPatchMaker.Calculate(current, desired)
 	if err != nil {
-		log.Error(err, "could not match objects", "kind", desiredType)
+		log.Error("could not match objects", zap.Error(err), zap.String("kind", desiredType.String()))
 		return true
 	} else if patchResult.IsEmpty() {
-		log.V(1).Info("resource is in sync")
+		log.Debug("resource is in sync", zap.String("kind", desiredType.String()))
 		return false
 	} else {
-		log.Info("resource diffs",
-			"patch", string(patchResult.Patch),
-			"current", string(patchResult.Current),
-			"modified", string(patchResult.Modified),
-			"original", string(patchResult.Original))
+		log.Debug("resource diffs",
+			zap.String("patch", string(patchResult.Patch)),
+			zap.String("current", string(patchResult.Current)),
+			zap.String("modified", string(patchResult.Modified)),
+			zap.String("original", string(patchResult.Original)))
 		return true
 	}
 }
@@ -155,12 +164,9 @@ func IsPodContainsPendingContainer(pod *corev1.Pod) bool {
 }
 
 func PodReady(pod *corev1.Pod) bool {
-	if &pod.Status != nil && len(pod.Status.Conditions) > 0 {
-		for _, condition := range pod.Status.Conditions {
-			if condition.Type == v1.PodReady &&
-				condition.Status == v1.ConditionTrue {
-				return true
-			}
+	for i := range pod.Status.Conditions {
+		if pod.Status.Conditions[i].Type == corev1.PodReady && pod.Status.Conditions[i].Status == corev1.ConditionTrue {
+			return true
 		}
 	}
 	return false

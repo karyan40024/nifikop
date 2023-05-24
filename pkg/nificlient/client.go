@@ -2,19 +2,18 @@ package nificlient
 
 import (
 	"context"
-	"emperror.dev/errors"
 	"fmt"
-	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
 	"net/http"
 	"net/url"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"time"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
-	"github.com/konpyutaika/nifikop/pkg/errorfactory"
-)
+	"emperror.dev/errors"
+	"go.uber.org/zap"
 
-var log = ctrl.Log.WithName("nifi_client")
+	"github.com/konpyutaika/nifikop/pkg/errorfactory"
+	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
+)
 
 const (
 	PRIMARY_NODE        = "Primary Node"
@@ -53,10 +52,10 @@ type NifiClient interface {
 	RemoveClusterNodeFromClusterNodeId(nId string) error
 
 	// Registry client func
-	GetRegistryClient(id string) (*nigoapi.RegistryClientEntity, error)
-	CreateRegistryClient(entity nigoapi.RegistryClientEntity) (*nigoapi.RegistryClientEntity, error)
-	UpdateRegistryClient(entity nigoapi.RegistryClientEntity) (*nigoapi.RegistryClientEntity, error)
-	RemoveRegistryClient(entity nigoapi.RegistryClientEntity) error
+	GetRegistryClient(id string) (*nigoapi.FlowRegistryClientEntity, error)
+	CreateRegistryClient(entity nigoapi.FlowRegistryClientEntity) (*nigoapi.FlowRegistryClientEntity, error)
+	UpdateRegistryClient(entity nigoapi.FlowRegistryClientEntity) (*nigoapi.FlowRegistryClientEntity, error)
+	RemoveRegistryClient(entity nigoapi.FlowRegistryClientEntity) error
 
 	// Flow client func
 	GetFlow(id string) (*nigoapi.ProcessGroupFlowEntity, error)
@@ -92,6 +91,7 @@ type NifiClient interface {
 	UpdateInputPortRunStatus(id string, entity nigoapi.PortRunStatusEntity) (*nigoapi.ProcessorEntity, error)
 
 	// Parameter context func
+	GetParameterContexts() ([]nigoapi.ParameterContextEntity, error)
 	GetParameterContext(id string) (*nigoapi.ParameterContextEntity, error)
 	CreateParameterContext(entity nigoapi.ParameterContextEntity) (*nigoapi.ParameterContextEntity, error)
 	RemoveParameterContext(entity nigoapi.ParameterContextEntity) error
@@ -134,6 +134,7 @@ type NifiClient interface {
 
 type nifiClient struct {
 	NifiClient
+	log        *zap.Logger
 	opts       *clientconfig.NifiConfig
 	client     *nigoapi.APIClient
 	nodeClient map[int32]*nigoapi.APIClient
@@ -144,8 +145,9 @@ type nifiClient struct {
 	newClient func(*nigoapi.Configuration) *nigoapi.APIClient
 }
 
-func New(opts *clientconfig.NifiConfig) NifiClient {
+func New(opts *clientconfig.NifiConfig, logger *zap.Logger) NifiClient {
 	nClient := &nifiClient{
+		log:     logger,
 		opts:    opts,
 		timeout: time.Duration(opts.OperationTimeout) * time.Second,
 	}
@@ -159,7 +161,7 @@ func (n *nifiClient) Build() error {
 	n.client = n.newClient(config)
 
 	n.nodeClient = make(map[int32]*nigoapi.APIClient)
-	for nodeId, _ := range n.opts.NodesURI {
+	for nodeId := range n.opts.NodesURI {
 		nodeConfig := n.getNiNodeGoApiConfig(nodeId)
 		n.nodeClient[nodeId] = n.newClient(nodeConfig)
 	}
@@ -178,14 +180,14 @@ func (n *nifiClient) Build() error {
 }
 
 // NewFromConfig is a convenient wrapper around New() and ClusterConfig()
-func NewFromConfig(opts *clientconfig.NifiConfig) (NifiClient, error) {
+func NewFromConfig(opts *clientconfig.NifiConfig, logger *zap.Logger) (NifiClient, error) {
 	var client NifiClient
 	var err error
 
 	if opts == nil {
 		return nil, errorfactory.New(errorfactory.NilClientConfig{}, errors.New("The NiFi client config is nil"), "The NiFi client config is nil")
 	}
-	client = New(opts)
+	client = New(opts, logger)
 	err = client.Build()
 	if err != nil {
 		return nil, err
@@ -202,7 +204,6 @@ func (n *nifiClient) getNifiGoApiConfig() (config *nigoapi.Configuration) {
 	if n.opts.UseSSL {
 		transport = &http.Transport{}
 		config.Scheme = "HTTPS"
-		n.opts.TLSConfig.BuildNameToCertificate()
 		transport.TLSClientConfig = n.opts.TLSConfig
 		protocol = "https"
 	}
@@ -225,7 +226,7 @@ func (n *nifiClient) getNifiGoApiConfig() (config *nigoapi.Configuration) {
 	config.BasePath = fmt.Sprintf("%s://%s/nifi-api", protocol, n.opts.NifiURI)
 	config.Host = n.opts.NifiURI
 	if len(n.opts.NifiURI) == 0 {
-		for nodeId, _ := range n.opts.NodesURI {
+		for nodeId := range n.opts.NodesURI {
 			config.BasePath = fmt.Sprintf("%s://%s/nifi-api", protocol, n.opts.NodesURI[nodeId].RequestHost)
 			config.Host = n.opts.NodesURI[nodeId].RequestHost
 		}
@@ -242,7 +243,6 @@ func (n *nifiClient) getNiNodeGoApiConfig(nodeId int32) (config *nigoapi.Configu
 	if n.opts.UseSSL {
 		transport = &http.Transport{}
 		config.Scheme = "HTTPS"
-		n.opts.TLSConfig.BuildNameToCertificate()
 		transport.TLSClientConfig = n.opts.TLSConfig
 		protocol = "https"
 	}

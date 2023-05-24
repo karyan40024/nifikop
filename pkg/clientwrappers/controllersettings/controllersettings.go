@@ -1,22 +1,21 @@
 package controllersettings
 
 import (
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
 	"github.com/konpyutaika/nifikop/pkg/clientwrappers"
 	"github.com/konpyutaika/nifikop/pkg/common"
 	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
-	ctrl "sigs.k8s.io/controller-runtime"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 )
 
-var log = ctrl.Log.WithName("controllersettings-method")
+var log = common.CustomLogger().Named("controllersettings-method")
 
-func controllerConfigIsSync(cluster *v1alpha1.NifiCluster, entity *nigoapi.ControllerConfigurationEntity) bool {
+func controllerConfigIsSync(cluster *v1.NifiCluster, entity *nigoapi.ControllerConfigurationEntity) bool {
 	return cluster.Spec.ReadOnlyConfig.GetMaximumTimerDrivenThreadCount() == entity.Component.MaxTimerDrivenThreadCount &&
 		cluster.Spec.ReadOnlyConfig.GetMaximumEventDrivenThreadCount() == entity.Component.MaxEventDrivenThreadCount
 }
 
-func SyncConfiguration(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCluster) error {
+func SyncConfiguration(config *clientconfig.NifiConfig, cluster *v1.NifiCluster) error {
 
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -30,7 +29,7 @@ func SyncConfiguration(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCl
 
 	if !controllerConfigIsSync(cluster, entity) {
 		updateControllerConfigEntity(cluster, entity)
-		entity, err = nClient.UpdateControllerConfig(*entity)
+		_, _ = nClient.UpdateControllerConfig(*entity)
 		if err := clientwrappers.ErrorUpdateOperation(log, err, "Update controller conif"); err != nil {
 			return err
 		}
@@ -38,7 +37,7 @@ func SyncConfiguration(config *clientconfig.NifiConfig, cluster *v1alpha1.NifiCl
 	return nil
 }
 
-func updateControllerConfigEntity(cluster *v1alpha1.NifiCluster, entity *nigoapi.ControllerConfigurationEntity) {
+func updateControllerConfigEntity(cluster *v1.NifiCluster, entity *nigoapi.ControllerConfigurationEntity) {
 	if entity == nil {
 		entity = &nigoapi.ControllerConfigurationEntity{}
 	}

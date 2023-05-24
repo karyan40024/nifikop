@@ -1,18 +1,17 @@
 package registryclient
 
 import (
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
 	"github.com/konpyutaika/nifikop/pkg/clientwrappers"
 	"github.com/konpyutaika/nifikop/pkg/common"
 	"github.com/konpyutaika/nifikop/pkg/nificlient"
 	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
-	ctrl "sigs.k8s.io/controller-runtime"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 )
 
-var log = ctrl.Log.WithName("registryclient-method")
+var log = common.CustomLogger().Named("registryclient-method")
 
-func ExistRegistryClient(registryClient *v1alpha1.NifiRegistryClient, config *clientconfig.NifiConfig) (bool, error) {
+func ExistRegistryClient(registryClient *v1.NifiRegistryClient, config *clientconfig.NifiConfig) (bool, error) {
 
 	if registryClient.Status.Id == "" {
 		return false, nil
@@ -34,29 +33,29 @@ func ExistRegistryClient(registryClient *v1alpha1.NifiRegistryClient, config *cl
 	return entity != nil, nil
 }
 
-func CreateRegistryClient(registryClient *v1alpha1.NifiRegistryClient,
-	config *clientconfig.NifiConfig) (*v1alpha1.NifiRegistryClientStatus, error) {
+func CreateRegistryClient(registryClient *v1.NifiRegistryClient,
+	config *clientconfig.NifiConfig) (*v1.NifiRegistryClientStatus, error) {
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
 		return nil, err
 	}
 
-	scratchEntity := nigoapi.RegistryClientEntity{}
+	scratchEntity := nigoapi.FlowRegistryClientEntity{}
 	updateRegistryClientEntity(registryClient, &scratchEntity)
 
 	entity, err := nClient.CreateRegistryClient(scratchEntity)
-	if err := clientwrappers.ErrorCreateOperation(log, err, "Create registry-client"); err != nil {
+	if err := clientwrappers.ErrorCreateOperation(log, err, "Failed to create registry-client "+registryClient.Name); err != nil {
 		return nil, err
 	}
 
-	return &v1alpha1.NifiRegistryClientStatus{
+	return &v1.NifiRegistryClientStatus{
 		Id:      entity.Id,
 		Version: *entity.Revision.Version,
 	}, nil
 }
 
-func SyncRegistryClient(registryClient *v1alpha1.NifiRegistryClient,
-	config *clientconfig.NifiConfig) (*v1alpha1.NifiRegistryClientStatus, error) {
+func SyncRegistryClient(registryClient *v1.NifiRegistryClient,
+	config *clientconfig.NifiConfig) (*v1.NifiRegistryClientStatus, error) {
 
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -83,7 +82,7 @@ func SyncRegistryClient(registryClient *v1alpha1.NifiRegistryClient,
 	return &status, nil
 }
 
-func RemoveRegistryClient(registryClient *v1alpha1.NifiRegistryClient,
+func RemoveRegistryClient(registryClient *v1.NifiRegistryClient,
 	config *clientconfig.NifiConfig) error {
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -104,18 +103,18 @@ func RemoveRegistryClient(registryClient *v1alpha1.NifiRegistryClient,
 	return clientwrappers.ErrorRemoveOperation(log, err, "Remove registry-client")
 }
 
-func registryClientIsSync(registryClient *v1alpha1.NifiRegistryClient, entity *nigoapi.RegistryClientEntity) bool {
+func registryClientIsSync(registryClient *v1.NifiRegistryClient, entity *nigoapi.FlowRegistryClientEntity) bool {
 	return registryClient.Name == entity.Component.Name &&
 		registryClient.Spec.Description == entity.Component.Description &&
 		registryClient.Spec.Uri == entity.Component.Uri
 }
 
-func updateRegistryClientEntity(registryClient *v1alpha1.NifiRegistryClient, entity *nigoapi.RegistryClientEntity) {
+func updateRegistryClientEntity(registryClient *v1.NifiRegistryClient, entity *nigoapi.FlowRegistryClientEntity) {
 
 	var defaultVersion int64 = 0
 
 	if entity == nil {
-		entity = &nigoapi.RegistryClientEntity{}
+		entity = &nigoapi.FlowRegistryClientEntity{}
 	}
 
 	if entity.Component == nil {
@@ -125,7 +124,7 @@ func updateRegistryClientEntity(registryClient *v1alpha1.NifiRegistryClient, ent
 	}
 
 	if entity.Component == nil {
-		entity.Component = &nigoapi.RegistryDto{}
+		entity.Component = &nigoapi.FlowRegistryClientDto{}
 	}
 
 	entity.Component.Name = registryClient.Name

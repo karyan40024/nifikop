@@ -1,5 +1,5 @@
 # Build the manager binary
-FROM golang:1.17 as builder
+FROM golang:1.20 as builder
 
 WORKDIR /workspace
 
@@ -17,8 +17,12 @@ COPY controllers/ controllers/
 COPY pkg/ pkg/
 COPY version/ version/
 
-# Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
+# Build the operator
+# TARGETARCH, TARGETOS are automatically set by docker. 
+#   see: https://sdk.operatorframework.io/docs/advanced-topics/multi-arch/#manifest-lists
+#   see: https://www.docker.com/blog/faster-multi-platform-builds-dockerfile-cross-compilation-guide/
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GO111MODULE=on go build -a -o manager main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
@@ -38,7 +42,7 @@ LABEL org.label-schema.docker.cmd.devel="N/A"
 LABEL org.label-schema.docker.cmd.test="N/A"
 LABEL org.label-schema.docker.cmd.help="N/A"
 LABEL org.label-schema.docker.cmd.debug="N/A"
-LABEL org.label-schema.docker.params="LOG_LEVEL=define loglevel,RESYNC_PERIOD=period in second to execute resynchronisation,WATCH_NAMESPACE=namespace to watch for nificlusters,OPERATOR_NAME=name of the operator instance pod"
+LABEL org.label-schema.docker.params="LOG_LEVEL=define loglevel,LOG_ENCODING=define logEncoding,RESYNC_PERIOD=period in second to execute resynchronisation,WATCH_NAMESPACE=namespace to watch for nificlusters,OPERATOR_NAME=name of the operator instance pod"
 
 WORKDIR /
 COPY --from=builder /workspace/manager .

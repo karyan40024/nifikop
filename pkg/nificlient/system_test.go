@@ -2,14 +2,15 @@ package nificlient
 
 import (
 	"fmt"
+	"github.com/konpyutaika/nifikop/api/v1"
 	"net/http"
 	"testing"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
 	"github.com/jarcoal/httpmock"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
 	nifiutil "github.com/konpyutaika/nifikop/pkg/util/nifi"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestDescribeCluster(t *testing.T) {
@@ -72,7 +73,7 @@ func TestGetClusterNode(t *testing.T) {
 	assert.Nil(nodeEntity)
 }
 
-func testGetClusterNode(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
+func testGetClusterNode(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -117,7 +118,7 @@ func TestDisconnectClusterNode(t *testing.T) {
 	assert.Nil(nodeEntity)
 }
 
-func testDisconnectClusterNode(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
+func testDisconnectClusterNode(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -162,7 +163,7 @@ func TestConnectClusterNode(t *testing.T) {
 	assert.Nil(nodeEntity)
 }
 
-func testConnectClusterNode(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
+func testConnectClusterNode(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -207,7 +208,7 @@ func TestOffloadClusterNode(t *testing.T) {
 	assert.Nil(nodeEntity)
 }
 
-func testOffloadClusterNode(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
+func testOffloadClusterNode(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) (*nigoapi.NodeEntity, error) {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -248,7 +249,7 @@ func TestRemoveClusterNode(t *testing.T) {
 	assert.IsType(ErrNifiClusterNotReturned200, err)
 }
 
-func testRemoveClusterNode(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) error {
+func testRemoveClusterNode(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) error {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -289,7 +290,7 @@ func TestRemoveClusterNodeFromClusterNodeId(t *testing.T) {
 	assert.IsType(ErrNifiClusterNotReturned200, err)
 }
 
-func testRemoveClusterNodeFromClusterNodeId(t *testing.T, cluster *v1alpha1.NifiCluster, nodeId int32, status int) error {
+func testRemoveClusterNodeFromClusterNodeId(t *testing.T, cluster *v1.NifiCluster, nodeId int32, status int) error {
 
 	client, err := testClientFromCluster(cluster, false)
 	if err != nil {
@@ -310,7 +311,7 @@ func testRemoveClusterNodeFromClusterNodeId(t *testing.T, cluster *v1alpha1.Nifi
 	return client.RemoveClusterNodeFromClusterNodeId(nodesId[nodeId])
 }
 
-func testClientFromCluster(cluster *v1alpha1.NifiCluster, empty bool) (NifiClient, error) {
+func testClientFromCluster(cluster *v1.NifiCluster, empty bool) (NifiClient, error) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 	url := nifiAddress(cluster, "/controller/cluster")
@@ -323,10 +324,10 @@ func testClientFromCluster(cluster *v1alpha1.NifiCluster, empty bool) (NifiClien
 				MockGetClusterResponse(cluster, empty))
 		})
 
-	cli, err := NewFromConfig(cfg)
+	cli, err := NewFromConfig(cfg, zap.NewNop())
 	return cli, err
 }
 
-func nifiAddress(cluster *v1alpha1.NifiCluster, path string) string {
+func nifiAddress(cluster *v1.NifiCluster, path string) string {
 	return fmt.Sprintf("http://%s/nifi-api%s", nifiutil.GenerateRequestNiFiAllNodeAddressFromCluster(cluster), path)
 }

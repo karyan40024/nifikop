@@ -1,14 +1,17 @@
 package nificlient
 
 import (
-	"github.com/konpyutaika/nifikop/pkg/nificlient/config/common"
-	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
 	"testing"
 
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
+
+	"github.com/konpyutaika/nifikop/pkg/nificlient/config/common"
+	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
+	"go.uber.org/zap"
+
 	"github.com/jarcoal/httpmock"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
 	nifiutil "github.com/konpyutaika/nifikop/pkg/util/nifi"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
 )
 
 var (
@@ -17,10 +20,7 @@ var (
 
 type mockNiFiClient struct {
 	NifiClient
-	opts       *clientconfig.NifiConfig
-	client     *nigoapi.APIClient
-	nodeClient map[int32]*nigoapi.APIClient
-	nodes      []nigoapi.NodeDto
+	opts *clientconfig.NifiConfig
 
 	newClient func(*nigoapi.Configuration) *nigoapi.APIClient
 	failOpts  bool
@@ -38,19 +38,15 @@ func newMockHttpClient(c *nigoapi.Configuration) *nigoapi.APIClient {
 
 func newMockClient() *nifiClient {
 	return &nifiClient{
+		log:       zap.NewNop(),
 		opts:      newMockOpts(),
 		newClient: newMockHttpClient,
 	}
 }
 
-func newBuildedMockClient() *nifiClient {
-	client := newMockClient()
-	client.Build()
-	return client
-}
-
 func NewMockNiFiClient() *nifiClient {
 	return &nifiClient{
+		log:       zap.NewNop(),
 		opts:      newMockOpts(),
 		newClient: newMockHttpClient,
 	}
@@ -64,7 +60,7 @@ func NewMockNiFiClientFailOps() *mockNiFiClient {
 	}
 }
 
-func MockGetClusterResponse(cluster *v1alpha1.NifiCluster, empty bool) map[string]interface{} {
+func MockGetClusterResponse(cluster *v1.NifiCluster, empty bool) map[string]interface{} {
 	if empty {
 		return make(map[string]interface{})
 	}
@@ -75,33 +71,33 @@ func MockGetClusterResponse(cluster *v1alpha1.NifiCluster, empty bool) map[strin
 					NodeId:  nodesId[0],
 					Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(0, cluster),
 					ApiPort: httpContainerPort,
-					Status:  string(v1alpha1.ConnectStatus),
+					Status:  string(v1.ConnectStatus),
 				},
 				{
 					NodeId:  nodesId[1],
 					Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(1, cluster),
 					ApiPort: httpContainerPort,
-					Status:  string(v1alpha1.DisconnectStatus),
+					Status:  string(v1.DisconnectStatus),
 				},
 				{
 					NodeId:  nodesId[2],
 					Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(2, cluster),
 					ApiPort: httpContainerPort,
-					Status:  string(v1alpha1.OffloadStatus),
+					Status:  string(v1.OffloadStatus),
 				},
 			},
 		},
 	}
 }
 
-func MockGetNodeResponse(nodeId int32, cluster *v1alpha1.NifiCluster) interface{} {
+func MockGetNodeResponse(nodeId int32, cluster *v1.NifiCluster) interface{} {
 	nodes := map[int32]map[string]interface{}{
 		0: {
 			"node": nigoapi.NodeDto{
 				NodeId:  nodesId[0],
 				Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(0, cluster),
 				ApiPort: httpContainerPort,
-				Status:  string(v1alpha1.ConnectStatus),
+				Status:  string(v1.ConnectStatus),
 			},
 		},
 		1: {
@@ -109,7 +105,7 @@ func MockGetNodeResponse(nodeId int32, cluster *v1alpha1.NifiCluster) interface{
 				NodeId:  nodesId[1],
 				Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(1, cluster),
 				ApiPort: httpContainerPort,
-				Status:  string(v1alpha1.ConnectStatus),
+				Status:  string(v1.ConnectStatus),
 			},
 		},
 		2: {
@@ -117,7 +113,7 @@ func MockGetNodeResponse(nodeId int32, cluster *v1alpha1.NifiCluster) interface{
 				NodeId:  nodesId[2],
 				Address: nifiutil.GenerateRequestNiFiNodeHostnameFromCluster(2, cluster),
 				ApiPort: httpContainerPort,
-				Status:  string(v1alpha1.ConnectStatus),
+				Status:  string(v1.ConnectStatus),
 			},
 		},
 	}
@@ -125,22 +121,22 @@ func MockGetNodeResponse(nodeId int32, cluster *v1alpha1.NifiCluster) interface{
 	return nodes[nodeId]
 }
 
-func testClusterMock(t *testing.T) *v1alpha1.NifiCluster {
+func testClusterMock(t *testing.T) *v1.NifiCluster {
 	t.Helper()
-	cluster := &v1alpha1.NifiCluster{}
+	cluster := &v1.NifiCluster{}
 
 	cluster.Name = clusterName
 	cluster.Namespace = clusterNamespace
-	cluster.Spec = v1alpha1.NifiClusterSpec{}
-	cluster.Spec.ListenersConfig = &v1alpha1.ListenersConfig{}
+	cluster.Spec = v1.NifiClusterSpec{}
+	cluster.Spec.ListenersConfig = &v1.ListenersConfig{}
 
-	cluster.Spec.Nodes = []v1alpha1.Node{
+	cluster.Spec.Nodes = []v1.Node{
 		{Id: 0},
 		{Id: 1},
 		{Id: 2},
 	}
 
-	cluster.Spec.ListenersConfig.InternalListeners = []v1alpha1.InternalListenerConfig{
+	cluster.Spec.ListenersConfig.InternalListeners = []v1.InternalListenerConfig{
 		{Type: "http", ContainerPort: httpContainerPort},
 		{Type: "cluster", ContainerPort: 8083},
 		{Type: "s2s", ContainerPort: 8085},
@@ -148,7 +144,7 @@ func testClusterMock(t *testing.T) *v1alpha1.NifiCluster {
 	return cluster
 }
 
-func configFromCluster(cluster *v1alpha1.NifiCluster) (*clientconfig.NifiConfig, error) {
+func configFromCluster(cluster *v1.NifiCluster) (*clientconfig.NifiConfig, error) {
 	conf := common.ClusterConfig(cluster)
 	return conf, nil
 }

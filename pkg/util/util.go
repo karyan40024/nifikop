@@ -3,6 +3,7 @@ package util
 import (
 	"crypto/sha1"
 	"fmt"
+	"github.com/konpyutaika/nifikop/api/v1"
 	"math/rand"
 	"os"
 	"reflect"
@@ -10,11 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 
 	"emperror.dev/errors"
 	"github.com/imdario/mergo"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/discovery"
 )
 
 // IntstrPointer generate IntOrString pointer from int
@@ -55,6 +58,25 @@ func MapStringStringPointer(in map[string]string) (out map[string]*string) {
 		out[k] = StringPointer(v)
 	}
 	return
+}
+
+// MergeHostAliases takes two host alias lists and merges them. For IP conflicts, the latter/second list takes precedence
+func MergeHostAliases(globalAliases []corev1.HostAlias, overrideAliases []corev1.HostAlias) []corev1.HostAlias {
+	aliasesMap := map[string]corev1.HostAlias{}
+	aliases := []corev1.HostAlias{}
+
+	for _, alias := range globalAliases {
+		aliasesMap[alias.IP] = alias
+	}
+	// the below will override any existing IPs
+	for _, alias := range overrideAliases {
+		aliasesMap[alias.IP] = alias
+	}
+	for _, alias := range aliasesMap {
+		aliases = append(aliases, alias)
+	}
+
+	return aliases
 }
 
 // MergeLabels merges two given labels
@@ -98,7 +120,7 @@ func ConvertStringToInt32(s string) int32 {
 }
 
 // IsSSLEnabledForInternalCommunication checks if ssl is enabled for internal communication
-func IsSSLEnabledForInternalCommunication(l []v1alpha1.InternalListenerConfig) (enabled bool) {
+func IsSSLEnabledForInternalCommunication(l []v1.InternalListenerConfig) (enabled bool) {
 
 	for _, listener := range l {
 		if strings.ToLower(listener.Type) == "ssl" {
@@ -161,9 +183,9 @@ func ParsePropertiesFormat(properties string) map[string]string {
 }
 
 // GetNodeConfig compose the nodeConfig for a given nifi node
-func GetNodeConfig(node v1alpha1.Node, clusterSpec v1alpha1.NifiClusterSpec) (*v1alpha1.NodeConfig, error) {
+func GetNodeConfig(node v1.Node, clusterSpec v1.NifiClusterSpec) (*v1.NodeConfig, error) {
 
-	nConfig := &v1alpha1.NodeConfig{}
+	nConfig := &v1.NodeConfig{}
 	if node.NodeConfigGroup == "" {
 		return node.NodeConfig, nil
 	} else if node.NodeConfig != nil {
@@ -178,7 +200,7 @@ func GetNodeConfig(node v1alpha1.Node, clusterSpec v1alpha1.NifiClusterSpec) (*v
 }
 
 // GetNodeImage returns the used node image
-func GetNodeImage(nodeConfig *v1alpha1.NodeConfig, clusterImage string) string {
+func GetNodeImage(nodeConfig *v1.NodeConfig, clusterImage string) string {
 	if nodeConfig.Image != "" {
 		return nodeConfig.Image
 	}
@@ -186,7 +208,7 @@ func GetNodeImage(nodeConfig *v1alpha1.NodeConfig, clusterImage string) string {
 }
 
 // NifiUserSliceContains returns true if list contains s
-func NifiUserSliceContains(list []*v1alpha1.NifiUser, u *v1alpha1.NifiUser) bool {
+func NifiUserSliceContains(list []*v1.NifiUser, u *v1.NifiUser) bool {
 	for _, v := range list {
 		if reflect.DeepEqual(&v, &u) {
 			return true
@@ -195,11 +217,36 @@ func NifiUserSliceContains(list []*v1alpha1.NifiUser, u *v1alpha1.NifiUser) bool
 	return false
 }
 
-func NodesToIdList(nodes []v1alpha1.Node) (ids []int32) {
+func NodesToIdList(nodes []v1.Node) (ids []int32) {
 	for _, node := range nodes {
 		ids = append(ids, node.Id)
 	}
 	return
+}
+
+func NodesToIdMap(nodes []v1.Node) (nodeMap map[int32]v1.Node) {
+	nodeMap = make(map[int32]v1.Node)
+	for _, node := range nodes {
+		nodeMap[node.Id] = node
+	}
+	return
+}
+
+// SubtractNodes removes nodesToRemove from the originalNodes list by the node's Ids and returns the result
+func SubtractNodes(originalNodes []v1.Node, nodesToRemove []v1.Node) (results []v1.Node) {
+	if len(originalNodes) == 0 || len(nodesToRemove) == 0 {
+		return originalNodes
+	}
+	nodesToRemoveMap := NodesToIdMap(nodesToRemove)
+	results = []v1.Node{}
+
+	for _, node := range originalNodes {
+		if _, found := nodesToRemoveMap[node.Id]; !found {
+			// results are those which are _not_ in the nodesToRemove map
+			results = append(results, node)
+		}
+	}
+	return results
 }
 
 // computes the max between 2 ints
@@ -237,4 +284,35 @@ func GetRequeueInterval(interval int, offset int) time.Duration {
 	duration := interval + rand.Intn(offset+1) - (offset / 2)
 	duration = Max(duration, rand.Intn(5)+1) // make sure duration does not go zero for very large offsets
 	return time.Duration(duration) * time.Second
+}
+
+func IsK8sPrior1_21() bool {
+	major, minor, err := GetK8sVersion()
+	return err == nil && *major == 1 && *minor < 21
+}
+
+func GetK8sVersion() (major *int, minor *int, err error) {
+	cfg, err := config.GetConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := discoveryClient.ServerVersion()
+	if err != nil {
+		return nil, nil, err
+	}
+	maj, err := strconv.Atoi(info.Major)
+	if err != nil {
+		return nil, nil, err
+	}
+	major = &maj
+	min, err := strconv.Atoi(info.Minor)
+	if err != nil {
+		return nil, nil, err
+	}
+	minor = &min
+	return major, minor, nil
 }

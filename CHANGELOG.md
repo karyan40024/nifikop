@@ -2,7 +2,152 @@
 
 ### Added
 
+- [PR #258](https://github.com/konpyutaika/nifikop/pull/141) - **[Helm Chart]** Upgraded helm-deployed HPA to v2 and added flowPosition to NiFiDataflow
+
+### Changed
+
+- [PR #257](https://github.com/konpyutaika/nifikop/pull/257) - **[Operator]** Updated the operator-sdk to 1.28.0.
+- [PR #263](https://github.com/konpyutaika/nifikop/pull/263) - **[NiGoApi]** Upgrade nigoapi to v0.0.8.
+
+### Fixed Bugs
+
+### Deprecated
+
+### Removed
+
+## v1.1.1
+
+### Added
+- [PR #244](https://github.com/konpyutaika/nifikop/pull/244) - **[Operator]** Updated the go version in nifikop to 1.20.
+
+- [PR #141](https://github.com/konpyutaika/nifikop/pull/141) - **[Helm Chart]** Added nifi-cluster helm chart.
+
+### Fixed Bugs
+
+- [PR #243](https://github.com/konpyutaika/nifikop/pull/243) - **[Operator]** Re-Fixed bug where an incorrect condition was used to determine whether or not to substitute a custom authorizers template.
+- [PR #245](https://github.com/konpyutaika/nifikop/pull/245) - **[Operator]** Added staticcheck linting and go vuln scanning to Makefile. Fixed all linting issues with operator
+
+## v1.1.0
+
+### Added
+
+- [PR #220](https://github.com/konpyutaika/nifikop/pull/220) - **[Operator/NifiCluster]** Made `Pod` readiness and liveness checks configurable.
+- [PR #218](https://github.com/konpyutaika/nifikop/pull/218) - **[Operator]** Add cross-platform support to nifikop docker image.
+
+### Changed
+
+- [PR #236](https://github.com/konpyutaika/nifikop/pull/236) - **[Operator]** Fixed issue where operator would infinitely retry requests if it cannot find `Dataflow`/`ParameterContext` update & drop requests.
+
+### Fixed Bugs
+
+- [PR #223](https://github.com/konpyutaika/nifikop/pull/223) - **[Operator]** Fixed bug where an incorrect condition was used to determine whether or not to substitute a custom authorizers template.
+
+## v1.0.0
+
+### Changed
+
+- [PR #190](https://github.com/konpyutaika/nifikop/pull/190) - **[CRDs]** Migrate v1alpha1 to v1
+
+## v0.16.0
+
+### Added
+
+- [PR #202](https://github.com/konpyutaika/nifikop/pull/202) - **[Operator]** Updated the go version in nifikop to 1.19.
+- [PR #208](https://github.com/konpyutaika/nifikop/pull/208) - **[Operator]** Updated the cert-manager lib version to v1.10.0.
+
+### Changed
+
+- [PR #205](https://github.com/konpyutaika/nifikop/pull/205) - **[Operator]** Updated operator-sdk to v1.25.2.
+
+### Fixed Bugs
+
+- [PR #195](https://github.com/konpyutaika/nifikop/pull/195) - **[Helm Chart]** Fixed bug where default metrics port collided with default health probe port.
+- [PR #210](https://github.com/konpyutaika/nifikop/pull/210) - **[NifiUser]** Fixed issue where `NifiUser` `Certificate` and `Secret` resources get re-created after the `NifiUser` has been marked for deletion and removed. This is most noticeable when deploying NiFi clusters via ArgoCD.
+
+## v0.15.0
+
+### Added
+
+- [PR #165](https://github.com/konpyutaika/nifikop/pull/165) - **[NifiParameterContext]** Add parameter context inheritance.
+
+### Changed
+
+- [PR #165](https://github.com/konpyutaika/nifikop/pull/165) - **[NiGoApi]** Update NiGoApi dependence.
+
+### Fixed Bugs
+
+- [PR #189](https://github.com/konpyutaika/nifikop/pull/189) - **[Operator]** Fixed issue where nifikop's zookeeper init container would not tolerate multiple comma-delimited `host:port` pairs in the `NifiCluster.Spec.ZkAddress` configuration.
+
+## v0.14.1
+
+### Changed
+
+- [PR #160](https://github.com/konpyutaika/nifikop/pull/160) - **[Documentation]** Upgrade documentation dependencies.
+
+### Fixed Bugs
+
+- [PR #174](https://github.com/konpyutaika/nifikop/pull/174) - **[Operator]** Fix K8S version getting.
+
+## v0.14.0
+
+### Added
+
+- [PR #138](https://github.com/konpyutaika/nifikop/pull/138) - **[Operator/NifiCluster]** Add ability to configure the NiFi Load Balance port.
+- [PR #144](https://github.com/konpyutaika/nifikop/pull/144) - **[Operator]** Add automatic detection of k8s prior 1.21.
+- [PR #153](https://github.com/konpyutaika/nifikop/pull/153) - **[Helm Chart]** Added helm values to set common labels and annotations.
+
+### Changed
+
+- [PR #142](https://github.com/konpyutaika/nifikop/pull/142) - **[Operator]** Fixed issue where operator would modify `NifiCluster` and `NifiDataflow` status on every reconciliation loop unnecessarily.
+- [PR #151](https://github.com/konpyutaika/nifikop/pull/151) - **[Operator]** Fixed an issue where the controller logging erroneously appeared to all come from the same controller.
+
+### Fixed Bugs
+- [PR #155](https://github.com/konpyutaika/nifikop/pull/155) - **[Operator]** Removed instances where reconcile requeue didn't honor the interval time
+
+## v0.13.1
+
+### Changed
+
+- [PR #146](https://github.com/konpyutaika/nifikop/pull/146) - **[Operator/NifiCluster]** Move from volume prefix to pvc label selection for deletion
+
+## v0.13.0
+
+### Added
+
+- [PR #89](https://github.com/konpyutaika/nifikop/pull/89) - **[Operator/NifiNodeGroupAutoscaler]** Add NifiNodeGroupAutoscaler to automatically horizontally scale a NifiCluster resource via the Kubernetes HorizontalPodAutoscaler.
+
+## v0.12.0
+
+### Added
+
+- [PR #108](https://github.com/konpyutaika/nifikop/pull/108) - **[Operator/Logging]** Migrated from logr library to zap
+- [PR #112](https://github.com/konpyutaika/nifikop/pull/112) - **[Documentation]** Add section to explain how upgrade from 0.7.6 to 0.8.0.
+- [PR #114](https://github.com/konpyutaika/nifikop/pull/114) - **[Operator/NifiCluster]** Added ability to set the `PodSpec.HostAliases` to provide Pod-level override of hostname resolution when DNS and other options are not applicable.
+
+### Changed
+
+- [PR #136](https://github.com/konpyutaika/nifikop/pull/136) - **[Operator]** Update sync logic of dataflow to stop it fully.
+- [PR #115](https://github.com/konpyutaika/nifikop/pull/115) - **[Operator]** Upgrade go version to 1.18.
+- [PR #120](https://github.com/konpyutaika/nifikop/pull/120) - **[Operator]** Upgrade operator-sdk to v1.22.1.
+- [PR #121](https://github.com/konpyutaika/nifikop/pull/121) - **[Operator]** Refactor much of the nifikop logging to include more context.
+- [PR #122](https://github.com/konpyutaika/nifikop/pull/122) - **[Operator/NifiCluster]** Change name of PVCs that nifikop creates to include the name set via `NifiCluster.Spec.node_config_group.StorageConfigs.Name`
+- [PR #123](https://github.com/konpyutaika/nifikop/pull/123) - **[Documentation]** Added nifi.sensitive.props.key to config samples
+
+
+### Fixed Bugs
+
+- [PR #135](https://github.com/konpyutaika/nifikop/pull/135) - **[Operator]** Update log generation to not reference nil variable
+- [PR #106](https://github.com/konpyutaika/nifikop/pull/106) - **[Documentation]** Patch documentation version and mixed docs.
+- [PR #110](https://github.com/konpyutaika/nifikop/pull/110) - **[Operator]** Handle case where `Certificate` is destroyed before `NifiUser` to avoid Nifi user controller getting stuck on deletion
+
+
+## v0.11.0
+
+### Added
+
 - [PR #76](https://github.com/konpyutaika/nifikop/pull/76) - **[Operator/NiFiCluster]** Add ability to override default authorizers.xml template.
+- [PR #95](https://github.com/konpyutaika/nifikop/pull/95) - **[Operator/NiFiParameterContext]** Allow the operator to take over existing parameter context.
+- [PR #96](https://github.com/konpyutaika/nifikop/pull/96) - **[Operator/NifiCluster]** Add ability to specify pod priority class
 
 ### Changed
 
@@ -15,6 +160,10 @@
 - [PR #74](https://github.com/konpyutaika/nifikop/pull/74) - **[Operator]** Removed legacy orange CRDs.
 
 ### Fixed Bugs
+
+- [PR #76](https://github.com/konpyutaika/nifikop/pull/88) - **[Operator/NiFiCluster]** Re-ordering config out of sync steps.
+- [PR #93](https://github.com/konpyutaika/nifikop/pull/93) - **[Documentation]** Remove serviceAnnotations mentions and fix docs.
+- [PR #101](https://github.com/konpyutaika/nifikop/pull/101) - **[Operator]** Handle finalizer removal case where `NifiCluster` is aggressively torn down and pods are no longer available to communicate with.
 
 ## v0.10.0
 

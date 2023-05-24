@@ -1,19 +1,18 @@
 package accesspolicies
 
 import (
-	"strings"
-	nigoapi "github.com/erdrix/nigoapi/pkg/nifi"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
 	"github.com/konpyutaika/nifikop/pkg/clientwrappers"
 	"github.com/konpyutaika/nifikop/pkg/common"
 	"github.com/konpyutaika/nifikop/pkg/nificlient"
 	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
-	ctrl "sigs.k8s.io/controller-runtime"
+	nigoapi "github.com/konpyutaika/nigoapi/pkg/nifi"
+	"strings"
 )
 
-var log = ctrl.Log.WithName("accesspolicies-method")
+var log = common.CustomLogger().Named("accesspolicies-method")
 
-func ExistAccessPolicies(accessPolicy *v1alpha1.AccessPolicy, config *clientconfig.NifiConfig) (bool, error) {
+func ExistAccessPolicies(accessPolicy *v1.AccessPolicy, config *clientconfig.NifiConfig) (bool, error) {
 
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -43,7 +42,7 @@ func ExistAccessPolicies(accessPolicy *v1alpha1.AccessPolicy, config *clientconf
 	return entity != nil, nil
 }
 
-func CreateAccessPolicy(accessPolicy *v1alpha1.AccessPolicy, config *clientconfig.NifiConfig) (string, error) {
+func CreateAccessPolicy(accessPolicy *v1.AccessPolicy, config *clientconfig.NifiConfig) (string, error) {
 
 	nClient, err := common.NewClusterConnection(log, config)
 	if err != nil {
@@ -53,8 +52,8 @@ func CreateAccessPolicy(accessPolicy *v1alpha1.AccessPolicy, config *clientconfi
 	scratchEntity := nigoapi.AccessPolicyEntity{}
 	updateAccessPolicyEntity(
 		accessPolicy,
-		[]*v1alpha1.NifiUser{}, []*v1alpha1.NifiUser{},
-		[]*v1alpha1.NifiUserGroup{}, []*v1alpha1.NifiUserGroup{},
+		[]*v1.NifiUser{}, []*v1.NifiUser{},
+		[]*v1.NifiUserGroup{}, []*v1.NifiUserGroup{},
 		config,
 		&scratchEntity)
 
@@ -67,11 +66,11 @@ func CreateAccessPolicy(accessPolicy *v1alpha1.AccessPolicy, config *clientconfi
 }
 
 func UpdateAccessPolicy(
-	accessPolicy *v1alpha1.AccessPolicy,
-	addUsers []*v1alpha1.NifiUser,
-	removeUsers []*v1alpha1.NifiUser,
-	addUserGroups []*v1alpha1.NifiUserGroup,
-	removeUserGroups []*v1alpha1.NifiUserGroup,
+	accessPolicy *v1.AccessPolicy,
+	addUsers []*v1.NifiUser,
+	removeUsers []*v1.NifiUser,
+	addUserGroups []*v1.NifiUserGroup,
+	removeUserGroups []*v1.NifiUserGroup,
 	config *clientconfig.NifiConfig) error {
 
 	nClient, err := common.NewClusterConnection(log, config)
@@ -98,16 +97,16 @@ func UpdateAccessPolicy(
 	}
 
 	updateAccessPolicyEntity(accessPolicy, addUsers, removeUsers, addUserGroups, removeUserGroups, config, entity)
-	entity, err = nClient.UpdateAccessPolicy(*entity)
+	_, _ = nClient.UpdateAccessPolicy(*entity)
 	return clientwrappers.ErrorUpdateOperation(log, err, "Update user")
 }
 
 func UpdateAccessPolicyEntity(
 	entity *nigoapi.AccessPolicyEntity,
-	addUsers []*v1alpha1.NifiUser,
-	removeUsers []*v1alpha1.NifiUser,
-	addUserGroups []*v1alpha1.NifiUserGroup,
-	removeUserGroups []*v1alpha1.NifiUserGroup,
+	addUsers []*v1.NifiUser,
+	removeUsers []*v1.NifiUser,
+	addUserGroups []*v1.NifiUserGroup,
+	removeUserGroups []*v1.NifiUserGroup,
 	config *clientconfig.NifiConfig) error {
 
 	nClient, err := common.NewClusterConnection(log, config)
@@ -123,16 +122,16 @@ func UpdateAccessPolicyEntity(
 	addRemoveUsersFromAccessPolicyEntity(addUsers, removeUsers, entity)
 	addRemoveUserGroupsFromAccessPolicyEntity(addUserGroups, removeUserGroups, entity)
 
-	entity, err = nClient.UpdateAccessPolicy(*entity)
+	_, _ = nClient.UpdateAccessPolicy(*entity)
 	return clientwrappers.ErrorUpdateOperation(log, err, "Update user")
 }
 
 func updateAccessPolicyEntity(
-	accessPolicy *v1alpha1.AccessPolicy,
-	addUsers []*v1alpha1.NifiUser,
-	removeUsers []*v1alpha1.NifiUser,
-	addUserGroups []*v1alpha1.NifiUserGroup,
-	removeUserGroups []*v1alpha1.NifiUserGroup,
+	accessPolicy *v1.AccessPolicy,
+	addUsers []*v1.NifiUser,
+	removeUsers []*v1.NifiUser,
+	addUserGroups []*v1.NifiUserGroup,
+	removeUserGroups []*v1.NifiUserGroup,
 	config *clientconfig.NifiConfig,
 	entity *nigoapi.AccessPolicyEntity) {
 
@@ -160,8 +159,8 @@ func updateAccessPolicyEntity(
 }
 
 func addRemoveUserGroupsFromAccessPolicyEntity(
-	addUserGroups []*v1alpha1.NifiUserGroup,
-	removeUserGroups []*v1alpha1.NifiUserGroup,
+	addUserGroups []*v1.NifiUserGroup,
+	removeUserGroups []*v1.NifiUserGroup,
 	entity *nigoapi.AccessPolicyEntity) {
 
 	// Add new userGroup from the access policy
@@ -189,8 +188,8 @@ func addRemoveUserGroupsFromAccessPolicyEntity(
 }
 
 func addRemoveUsersFromAccessPolicyEntity(
-	addUsers []*v1alpha1.NifiUser,
-	removeUsers []*v1alpha1.NifiUser,
+	addUsers []*v1.NifiUser,
+	removeUsers []*v1.NifiUser,
 	entity *nigoapi.AccessPolicyEntity) {
 
 	// Add new user from the access policy

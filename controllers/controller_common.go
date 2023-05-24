@@ -2,14 +2,21 @@ package controllers
 
 import (
 	"fmt"
-	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
+	"github.com/konpyutaika/nifikop/api/v1"
+	"strings"
 	"time"
 
-	"emperror.dev/errors"
 	"github.com/go-logr/logr"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	"github.com/konpyutaika/nifikop/pkg/util/clientconfig"
+	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
+
+	"emperror.dev/errors"
 	"github.com/konpyutaika/nifikop/pkg/errorfactory"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
@@ -18,11 +25,12 @@ import (
 
 var ClusterRefLabel = "nifiCluster"
 
+var getGvk = apiutil.GVKForObject
+
 // requeueWithError is a convenience wrapper around logging an error message
 // separate from the stacktrace and then passing the error through to the controller
 // manager
-func RequeueWithError(logger logr.Logger, msg string, err error) (reconcile.Result, error) {
-	// Info log the error message and then let the reconciler dump the stacktrace
+func RequeueWithError(logger zap.Logger, msg string, err error) (reconcile.Result, error) {
 	logger.Info(msg)
 	return reconcile.Result{}, err
 }
@@ -42,13 +50,13 @@ func Reconciled() (reconcile.Result, error) {
 }
 
 // clusterLabelString returns the label value for a cluster reference
-func ClusterLabelString(cluster *v1alpha1.NifiCluster) string {
+func ClusterLabelString(cluster *v1.NifiCluster) string {
 	return fmt.Sprintf("%s.%s", cluster.Name, cluster.Namespace)
 }
 
 // checkNodeConnectionError is a convenience wrapper for returning from common
 // node connection errors
-func CheckNodeConnectionError(logger logr.Logger, err error) (ctrl.Result, error) {
+func CheckNodeConnectionError(logger zap.Logger, err error) (ctrl.Result, error) {
 	switch errors.Cause(err).(type) {
 	case errorfactory.NodesUnreachable:
 		return ctrl.Result{
@@ -72,7 +80,7 @@ func CheckNodeConnectionError(logger logr.Logger, err error) (ctrl.Result, error
 }
 
 // applyClusterRefLabel ensures a map of labels contains a reference to a parent nifi cluster
-func ApplyClusterRefLabel(cluster *v1alpha1.NifiCluster, labels map[string]string) map[string]string {
+func ApplyClusterRefLabel(cluster *v1.NifiCluster, labels map[string]string) map[string]string {
 	labelValue := ClusterLabelString(cluster)
 	if labels == nil {
 		labels = make(map[string]string, 0)
@@ -106,7 +114,7 @@ func ApplyClusterReferenceLabel(cluster clientconfig.ClusterConnect, labels map[
 // getClusterRefNamespace returns the expected namespace for a Nifi cluster
 // referenced by a user/dataflow CR. It takes the namespace of the CR as the first
 // argument and the reference itself as the second.
-func GetClusterRefNamespace(ns string, ref v1alpha1.ClusterReference) string {
+func GetClusterRefNamespace(ns string, ref v1.ClusterReference) string {
 	clusterNamespace := ref.Namespace
 	if clusterNamespace == "" {
 		return ns
@@ -117,7 +125,7 @@ func GetClusterRefNamespace(ns string, ref v1alpha1.ClusterReference) string {
 // GetRegistryClientRefNamespace returns the expected namespace for a Nifi registry client
 // referenced by a dataflow CR. It takes the namespace of the CR as the first
 // argument and the reference itself as the second.
-func GetRegistryClientRefNamespace(ns string, ref v1alpha1.RegistryClientReference) string {
+func GetRegistryClientRefNamespace(ns string, ref v1.RegistryClientReference) string {
 	registryClientNamespace := ref.Namespace
 	if registryClientNamespace == "" {
 		return ns
@@ -128,7 +136,7 @@ func GetRegistryClientRefNamespace(ns string, ref v1alpha1.RegistryClientReferen
 // GetParameterContextRefNamespace returns the expected namespace for a Nifi parameter context
 // referenced by a dataflow CR. It takes the namespace of the CR as the first
 // argument and the reference itself as the second.
-func GetParameterContextRefNamespace(ns string, ref v1alpha1.ParameterContextReference) string {
+func GetParameterContextRefNamespace(ns string, ref v1.ParameterContextReference) string {
 	parameterContextNamespace := ref.Namespace
 	if parameterContextNamespace == "" {
 		return ns
@@ -139,7 +147,7 @@ func GetParameterContextRefNamespace(ns string, ref v1alpha1.ParameterContextRef
 // GetSecretRefNamespace returns the expected namespace for a Nifi secret
 // referenced by a parameter context CR. It takes the namespace of the CR as the first
 // argument and the reference itself as the second.
-func GetSecretRefNamespace(ns string, ref v1alpha1.SecretReference) string {
+func GetSecretRefNamespace(ns string, ref v1.SecretReference) string {
 	secretNamespace := ref.Namespace
 	if secretNamespace == "" {
 		return ns
@@ -150,10 +158,39 @@ func GetSecretRefNamespace(ns string, ref v1alpha1.SecretReference) string {
 // GetUserRefNamespace returns the expected namespace for a Nifi user
 // referenced by a parameter context CR. It takes the namespace of the CR as the first
 // argument and the reference itself as the second.
-func GetUserRefNamespace(ns string, ref v1alpha1.UserReference) string {
+func GetUserRefNamespace(ns string, ref v1.UserReference) string {
 	userNamespace := ref.Namespace
 	if userNamespace == "" {
 		return ns
 	}
 	return userNamespace
+}
+
+func GetLogConstructor(mgr manager.Manager, obj runtime.Object) (func(*reconcile.Request) logr.Logger, error) {
+
+	// Retrieve the GVK from the object we're reconciling
+	// to prepopulate logger information, and to optionally generate a default name.
+	gvk, err := getGvk(obj, mgr.GetScheme())
+	if err != nil {
+		return nil, err
+	}
+
+	log := mgr.GetLogger().WithValues(
+		"controller", strings.ToLower(gvk.Kind),
+		"controllerGroup", gvk.Group,
+		"controllerKind", gvk.Kind,
+	)
+
+	lowerCamelCaseKind := strings.ToLower(gvk.Kind[:1]) + gvk.Kind[1:]
+
+	return func(req *reconcile.Request) logr.Logger {
+		log := log
+		if req != nil {
+			log = log.WithValues(
+				lowerCamelCaseKind, klog.KRef(req.Namespace, req.Name),
+				"namespace", req.Namespace, "name", req.Name,
+			)
+		}
+		return log
+	}, nil
 }

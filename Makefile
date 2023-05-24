@@ -4,7 +4,7 @@ DOCKER_REGISTRY_BASE 	?= ghcr.io/konpyutaika/docker-images
 IMAGE_TAG				?= $(shell git describe --tags --abbrev=0 --match '[0-9].*[0-9].*[0-9]' 2>/dev/null)
 IMAGE_NAME 				?= $(SERVICE_NAME)
 BUILD_IMAGE				?= ghcr.io/konpyutaika/docker-images/nifikop-build
-GOLANG_VERSION          ?= 1.17
+GOLANG_VERSION          ?= 1.20
 IMAGE_TAG_BASE ?= <registry>/<operator name>
 OS = $(shell go env GOOS)
 ARCH = $(shell go env GOARCH)
@@ -14,6 +14,21 @@ WORKDIR := /go/nifikop
 
 # Debug variables
 TELEPRESENCE_REGISTRY ?= datawire
+
+## Location to install dependencies to
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+## Tool Binaries
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+
+## Tool Versions
+KUSTOMIZE_VERSION ?= v4.5.5
+CONTROLLER_TOOLS_VERSION ?= v0.9.2
+ENVTEST_K8S_VERSION = 1.26
 
 DEV_DIR := docker/build-image
 
@@ -28,8 +43,6 @@ ifeq ($(USE_IMAGE_DIGESTS), true)
 	BUNDLE_GEN_FLAGS += --use-image-digests
 endif
 
-# ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.22
 
 # Repository url for this project
 # in gitlab CI_REGISTRY_IMAGE=repo/path/name:tag
@@ -103,7 +116,7 @@ SHELL = /usr/bin/env bash -o pipefail
 
 # Build manager binary
 .PHONY: manager
-manager: generate fmt vet
+manager: manifests generate fmt vet
 	go build -o bin/manager main.go
 
 # Generate code
@@ -115,7 +128,7 @@ generate: controller-gen
 # Generate manifests e.g. CRD, RBAC etc.
 .PHONY: manifests
 manifests: controller-gen
-	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	$(CONTROLLER_GEN) rbac:roleName=manager-role crd:maxDescLen=0 webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 	mkdir -p helm/nifikop/crds && cp config/crd/bases/* helm/nifikop/crds
 
 # Build the docker image
@@ -124,13 +137,12 @@ docker-build:
 	docker build -t $(REPOSITORY):$(VERSION) .
 
 .PHONY: build
-build: manager manifests docker-build
+build: manager manifests
 
-# Download controller-gen locally if necessary
-CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 .PHONY: controller-gen
-controller-gen: ## Download controller-gen locally if necessary.
-	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.8.0)
+controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
+$(CONTROLLER_GEN): $(LOCALBIN)
+	test -s $(LOCALBIN)/controller-gen || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-tools/cmd/controller-gen@$(CONTROLLER_TOOLS_VERSION)
 
 # Run go fmt against code
 .PHONY: fmt
@@ -142,15 +154,27 @@ fmt:
 vet:
 	go vet ./...
 
+# Run https://staticcheck.io against code
+.PHONY: staticcheck
+staticcheck:
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	staticcheck ./...
+
+# RUN https://go.dev/blog/vuln against code for known CVEs
+.PHONY: govuln
+govuln:
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
+
 # Run tests
 ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
 .PHONY: test
-test: manifests generate fmt vet envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
+test: manifests generate fmt vet staticcheck govuln envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test ./... -coverprofile cover.out
 
 .PHONY: test-with-vendor
-test-with-vendor: manifests generate fmt vet envtest
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test -mod=vendor ./... -coverprofile cover.out
+test-with-vendor: manifests generate fmt vet staticcheck govuln envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -mod=vendor ./... -coverprofile cover.out
 
 # Run against the configured Kubernetes cluster in ~/.kube/config
 .PHONY: run
@@ -182,30 +206,17 @@ deploy: manifests kustomize
 undeploy:
 	$(KUSTOMIZE) build config/default | kubectl delete --ignore-not-found=$(ignore-not-found) -f -
 
-# Download kustomize locally if necessary
-KUSTOMIZE = $(shell pwd)/bin/kustomize
+KUSTOMIZE_INSTALL_SCRIPT ?= "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
 .PHONY: kustomize
-kustomize:
-	$(call go-get-tool,$(KUSTOMIZE),sigs.k8s.io/kustomize/kustomize/v3@v3.8.7)
+kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
+$(KUSTOMIZE): $(LOCALBIN)
+	test -s $(LOCALBIN)/kustomize || { curl -s $(KUSTOMIZE_INSTALL_SCRIPT) | bash -s -- $(subst v,,$(KUSTOMIZE_VERSION)) $(LOCALBIN); }
 
-ENVTEST = $(shell pwd)/bin/setup-envtest
 .PHONY: envtest
-envtest: ## Download envtest-setup locally if necessary.
-	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+envtest: $(ENVTEST) ## Download envtest-setup locally if necessary.
+$(ENVTEST): $(LOCALBIN)
+	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
-# go-get-tool will 'go install' any package $2 and install it to $1.
-PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-define go-get-tool
-@[ -f $(1) ] || { \
-set -e ;\
-TMP_DIR=$$(mktemp -d) ;\
-cd $$TMP_DIR ;\
-go mod init tmp ;\
-echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
-rm -rf $$TMP_DIR ;\
-}
-endef
 
 # Generate bundle manifests and metadata, then validate generated files.
 .PHONY: bundle
@@ -222,16 +233,22 @@ bundle-build:
 
 .PHONY: helm-package
 helm-package:
-	@echo Packaging $(CHART_VERSION)
+# package operator chart
+	@echo Packaging NiFiKop $(CHART_VERSION)
 ifdef CHART_VERSION
 	    echo $(CHART_VERSION)
 	    helm package --version $(CHART_VERSION) helm/nifikop
+			helm dependency update helm/nifi-cluster
+	    helm package --version $(CHART_VERSION) helm/nifi-cluster
 else
-		CHART_VERSION=$(HELM_VERSION)
-	    helm package helm/nifikop
+		CHART_VERSION=$(HELM_VERSION) helm package helm/nifikop
+		helm dependency update helm/nifi-cluster
+		CHART_VERSION=$(HELM_VERSION) helm package helm/nifi-cluster
 endif
 	mv nifikop-$(CHART_VERSION).tgz $(HELM_TARGET_DIR)
+	mv nifi-cluster-$(CHART_VERSION).tgz $(HELM_TARGET_DIR)
 	helm repo index $(HELM_TARGET_DIR)/
+
 
 # Push the docker image
 .PHONY: docker-push
@@ -242,6 +259,27 @@ ifdef PUSHLATEST
 	docker push $(REPOSITORY):latest
 endif
 # ----
+
+# PLATFORMS defines the target platforms for  the manager image be build to provide support to multiple
+# architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
+# - able to use docker buildx . More info: https://docs.docker.com/build/buildx/
+# - have enable BuildKit, More info: https://docs.docker.com/develop/develop-images/build_enhancements/
+# - be able to push the image for your registry (i.e. if you do not inform a valid value via IMG=<myregistry/image:<tag>> than the export will fail)
+# To properly provided solutions that supports more than one platform you should use this option.
+PLATFORMS ?= linux/arm64,linux/amd64,linux/s390x,linux/ppc64le
+.PHONY: docker-buildx
+docker-buildx: test ## Build and push docker image for the manager for cross-platform support
+  # copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+	- docker buildx create --name project-v3-builder
+	docker buildx use project-v3-builder
+ifdef PUSHLATEST
+	- docker buildx build --push --platform=$(PLATFORMS) --tag $(REPOSITORY):$(VERSION) --tag $(REPOSITORY):latest -f Dockerfile.cross .
+else
+	- docker buildx build --push --platform=$(PLATFORMS) --tag $(REPOSITORY):$(VERSION) -f Dockerfile.cross .
+endif
+	- docker buildx rm project-v3-builder
+	rm Dockerfile.cross
 
 .DEFAULT_GOAL := help
 .PHONY: help
@@ -328,7 +366,7 @@ ifeq (,$(shell which opm 2>/dev/null))
 	set -e ;\
 	mkdir -p $(dir $(OPM)) ;\
 	OS=$(shell go env GOOS) && ARCH=$(shell go env GOARCH) && \
-	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.19.1/$${OS}-$${ARCH}-opm ;\
+	curl -sSLo $(OPM) https://github.com/operator-framework/operator-registry/releases/download/v1.23.0/$${OS}-$${ARCH}-opm ;\
 	chmod +x $(OPM) ;\
 	}
 else

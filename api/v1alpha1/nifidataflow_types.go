@@ -4,9 +4,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // NifiDataflowSpec defines the desired state of NifiDataflow
 type NifiDataflowSpec struct {
 	// the UUID of the parent process group where you want to deploy your dataflow, if not set deploy at root level.
@@ -145,24 +142,15 @@ func (d *NifiDataflowSpec) GetSyncMode() DataflowSyncMode {
 }
 
 func (d *NifiDataflowSpec) SyncOnce() bool {
-	if d.GetSyncMode() == SyncOnce {
-		return true
-	}
-	return false
+	return d.GetSyncMode() == SyncOnce
 }
 
 func (d *NifiDataflowSpec) SyncAlways() bool {
-	if d.GetSyncMode() == SyncAlways {
-		return true
-	}
-	return false
+	return d.GetSyncMode() == SyncAlways
 }
 
 func (d *NifiDataflowSpec) SyncNever() bool {
-	if d.GetSyncMode() == SyncNever {
-		return true
-	}
-	return false
+	return d.GetSyncMode() == SyncNever
 }
 
 func (d *NifiDataflowSpec) GetParentProcessGroupID(rootProcessGroupId string) string {

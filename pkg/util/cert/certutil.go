@@ -13,8 +13,9 @@ import (
 	"strings"
 	"time"
 
-	certv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
+
+	certv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	keystore "github.com/pavel-v-chernykh/keystore-go"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -54,7 +55,7 @@ func DecodeKey(raw []byte) (parsedKey []byte, err error) {
 func DecodeCertificate(raw []byte) (cert *x509.Certificate, err error) {
 	block, _ := pem.Decode(raw)
 	if block == nil {
-		err = errors.New("Failed to decode x509 certificate from PEM")
+		err = errors.New("failed to decode x509 certificate from PEM")
 		return
 	}
 	cert, err = x509.ParseCertificate(block.Bytes)
@@ -63,10 +64,10 @@ func DecodeCertificate(raw []byte) (cert *x509.Certificate, err error) {
 
 // GeneratePass generates a random password
 func GeneratePass(length int) (passw []byte) {
-	mathrand.Seed(time.Now().UnixNano())
+	r := mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
 	var b strings.Builder
 	for i := 0; i < length; i++ {
-		b.WriteRune(passChars[mathrand.Intn(len(passChars))])
+		b.WriteRune(passChars[r.Intn(len(passChars))])
 	}
 	passw = []byte(b.String())
 	return
@@ -76,12 +77,12 @@ func GeneratePass(length int) (passw []byte) {
 func EnsureSecretPassJKS(secret *corev1.Secret) (injected *corev1.Secret, err error) {
 
 	// If the JKS Pass is already present - return
-	if _, ok := secret.Data[v1alpha1.PasswordKey]; ok {
+	if _, ok := secret.Data[v1.PasswordKey]; ok {
 		return secret, nil
 	}
 
 	injected = secret.DeepCopy()
-	injected.Data[v1alpha1.PasswordKey] = GeneratePass(16)
+	injected.Data[v1.PasswordKey] = GeneratePass(16)
 	return
 }
 

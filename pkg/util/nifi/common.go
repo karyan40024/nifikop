@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/konpyutaika/nifikop/api/v1alpha1"
+	v1 "github.com/konpyutaika/nifikop/api/v1"
 )
 
 const (
@@ -16,6 +16,10 @@ const (
 
 	// TimeStampLayout defines the date format used.
 	TimeStampLayout = "Mon, 2 Jan 2006 15:04:05 GMT"
+)
+
+var (
+	NifiDataVolumeMountKey = fmt.Sprintf("%s/nifi-data", v1.GroupVersion.Group)
 )
 
 // ParseTimeStampToUnixTime parses the given CC timeStamp to time format
@@ -96,7 +100,7 @@ func ComputeRequestNiFiNodeAddress(
 	headlessServiceEnabled bool,
 	clusterDomain string,
 	useExternalDNS bool,
-	internalListeners []v1alpha1.InternalListenerConfig,
+	internalListeners []v1.InternalListenerConfig,
 	serviceTemplate string) string {
 
 	return fmt.Sprintf("%s:%d",
@@ -105,7 +109,7 @@ func ComputeRequestNiFiNodeAddress(
 		InternalListenerForComm(internalListeners).ContainerPort)
 }
 
-func GenerateRequestNiFiNodeAddressFromCluster(nodeId int32, cluster *v1alpha1.NifiCluster) string {
+func GenerateRequestNiFiNodeAddressFromCluster(nodeId int32, cluster *v1.NifiCluster) string {
 	return ComputeRequestNiFiNodeAddress(
 		nodeId,
 		cluster.Name,
@@ -118,7 +122,7 @@ func GenerateRequestNiFiNodeAddressFromCluster(nodeId int32, cluster *v1alpha1.N
 	)
 }
 
-func GenerateRequestNiFiNodeHostnameFromCluster(nodeId int32, cluster *v1alpha1.NifiCluster) string {
+func GenerateRequestNiFiNodeHostnameFromCluster(nodeId int32, cluster *v1.NifiCluster) string {
 	return ComputeRequestNiFiNodeHostname(
 		nodeId,
 		cluster.Name,
@@ -170,7 +174,7 @@ func ComputeRequestNiFiAllNodeAddress(
 	clusterName, namespace string,
 	clusterDomain string,
 	useExternalDNS bool,
-	internalListeners []v1alpha1.InternalListenerConfig,
+	internalListeners []v1.InternalListenerConfig,
 	serviceTemplate string) string {
 
 	return fmt.Sprintf("%s:%d",
@@ -178,7 +182,7 @@ func ComputeRequestNiFiAllNodeAddress(
 		InternalListenerForComm(internalListeners).ContainerPort)
 }
 
-func GenerateRequestNiFiAllNodeAddressFromCluster(cluster *v1alpha1.NifiCluster) string {
+func GenerateRequestNiFiAllNodeAddressFromCluster(cluster *v1.NifiCluster) string {
 	return ComputeRequestNiFiAllNodeAddress(
 		cluster.Name,
 		cluster.Namespace,
@@ -189,7 +193,7 @@ func GenerateRequestNiFiAllNodeAddressFromCluster(cluster *v1alpha1.NifiCluster)
 	)
 }
 
-func GenerateRequestNiFiAllNodeHostnameFromCluster(cluster *v1alpha1.NifiCluster) string {
+func GenerateRequestNiFiAllNodeHostnameFromCluster(cluster *v1.NifiCluster) string {
 	return ComputeRequestNiFiAllNodeHostname(
 		cluster.Name,
 		cluster.Namespace,
@@ -217,7 +221,7 @@ func ComputeHostListenerNodeAddress(
 	clusterName, namespace string,
 	clusterDomain string,
 	useExternalDNS bool,
-	internalListeners []v1alpha1.InternalListenerConfig,
+	internalListeners []v1.InternalListenerConfig,
 	serviceTemplate string) string {
 
 	return fmt.Sprintf("%s:%d",
@@ -225,7 +229,7 @@ func ComputeHostListenerNodeAddress(
 		InternalListenerForComm(internalListeners).ContainerPort)
 }
 
-func GenerateHostListenerNodeAddressFromCluster(nodeId int32, cluster *v1alpha1.NifiCluster) string {
+func GenerateHostListenerNodeAddressFromCluster(nodeId int32, cluster *v1.NifiCluster) string {
 	return ComputeHostListenerNodeAddress(
 		nodeId,
 		cluster.Name,
@@ -237,7 +241,7 @@ func GenerateHostListenerNodeAddressFromCluster(nodeId int32, cluster *v1alpha1.
 	)
 }
 
-func GenerateHostListenerNodeHostnameFromCluster(nodeId int32, cluster *v1alpha1.NifiCluster) string {
+func GenerateHostListenerNodeHostnameFromCluster(nodeId int32, cluster *v1.NifiCluster) string {
 	return ComputeHostListenerNodeHostname(
 		nodeId,
 		cluster.Name,
@@ -248,24 +252,21 @@ func GenerateHostListenerNodeHostnameFromCluster(nodeId int32, cluster *v1alpha1
 	)
 }
 
-func InternalListenerForComm(internalListeners []v1alpha1.InternalListenerConfig) v1alpha1.InternalListenerConfig {
+func InternalListenerForComm(internalListeners []v1.InternalListenerConfig) v1.InternalListenerConfig {
 	return internalListeners[determineInternalListenerForComm(internalListeners)]
 }
 
-func determineInternalListenerForComm(internalListeners []v1alpha1.InternalListenerConfig) int {
-	var httpsServerPortId int
-	var httpServerPortId int
+func determineInternalListenerForComm(internalListeners []v1.InternalListenerConfig) int {
+	var serverPortId int
 	for id, iListener := range internalListeners {
-		if iListener.Type == v1alpha1.HttpsListenerType {
-			httpsServerPortId = id
-		} else if iListener.Type == v1alpha1.HttpListenerType {
-			httpServerPortId = id
+		if iListener.Type == v1.HttpsListenerType {
+			serverPortId = id
+			break
+		} else if iListener.Type == v1.HttpListenerType {
+			serverPortId = id
 		}
 	}
-	if &httpsServerPortId != nil {
-		return httpsServerPortId
-	}
-	return httpServerPortId
+	return serverPortId
 }
 
 // LabelsForNifi returns the labels for selecting the resources
